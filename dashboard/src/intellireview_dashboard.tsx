@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import {
   Code, AlertTriangle, CheckCircle, TrendingUp,
-  LogOut, User, Home, Activity
+  LogOut, User, Home, Activity, Upload
 } from 'lucide-react';
 
 // Types
@@ -75,6 +75,36 @@ interface AnalysisResult {
 interface LoginResponse {
   access_token: string;
   token_type: string;
+}
+
+interface FileResult {
+  analysis_id: number;
+  file_path: string;
+  language: string;
+  metrics: {
+    lines_of_code: number;
+    complexity: number | null;
+    maintainability_index: number | null;
+    duplication_percentage: number | null;
+  };
+  issue_count: number;
+  severity_counts: Record<string, number>;
+  issues: Issue[];
+  status: string;
+}
+
+interface ProjectUploadResult {
+  project_summary: {
+    total_files: number;
+    total_lines: number;
+    total_issues: number;
+    health_score: number;
+    language_breakdown: Record<string, number>;
+    processing_time: number;
+  };
+  file_results: FileResult[];
+  skipped: { file: string; reason: string }[];
+  errors: { file: string; error: string }[];
 }
 
 // Mock API service (replace with actual API calls)
@@ -184,6 +214,20 @@ const api = {
 
   getFeedbackStats: async (): Promise<FeedbackStats> => {
     const response = await fetch(`${API_BASE_URL}/feedback/stats`, {
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
+  },
+
+  uploadFiles: async (files: FileList): Promise<ProjectUploadResult> => {
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append('files', files[i]);
+    }
+    const response = await fetch(`${API_BASE_URL}/analysis/upload`, {
+      method: 'POST',
+      body: formData,
       credentials: 'include'
     });
     if (!response.ok) await handleApiError(response);
@@ -306,6 +350,10 @@ const IntelliReviewDashboard = () => {
           />
         )}
 
+        {currentView === 'upload' && (
+          <ProjectUploadView />
+        )}
+
         {currentView === 'metrics' && (
           <MetricsView metrics={metrics} teamMetrics={teamMetrics} feedbackStats={feedbackStats} />
         )}
@@ -415,6 +463,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, user, on
   const menuItems = [
     { id: 'dashboard', icon: Home, label: 'Dashboard' },
     { id: 'analyze', icon: Code, label: 'Analyze Code' },
+    { id: 'upload', icon: Upload, label: 'Upload Project' },
     { id: 'history', icon: Activity, label: 'History' },
     { id: 'metrics', icon: Activity, label: 'Metrics' }
   ];
@@ -886,3 +935,294 @@ const HistoryView: React.FC<{ history: AnalysisResult[], onSelect: (res: Analysi
 };
 
 export default IntelliReviewDashboard;
+
+// ===================== PROJECT UPLOAD VIEW =====================
+
+const ProjectUploadView: React.FC = () => {
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<ProjectUploadResult | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const fileInputRef = React.useRef(null) as any;
+  const folderInputRef = React.useRef(null) as any;
+
+  const handleUpload = async (files: FileList) => {
+    if (files.length === 0) return;
+    setUploading(true);
+    setResult(null);
+    try {
+      const res = await api.uploadFiles(files);
+      setResult(res);
+    } catch (error) {
+      alert('Upload failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (e: any) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer.files.length > 0) {
+      handleUpload(e.dataTransfer.files);
+    }
+  };
+
+  const handleDragOver = (e: any) => { e.preventDefault(); setDragOver(true); };
+  const handleDragLeave = () => setDragOver(false);
+
+  const severityDot: Record<string, string> = {
+    critical: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-500', low: 'bg-blue-400', info: 'bg-gray-400'
+  };
+
+  const langColors: Record<string, string> = {
+    python: 'bg-blue-100 text-blue-700',
+    javascript: 'bg-yellow-100 text-yellow-700',
+    java: 'bg-red-100 text-red-700',
+    c: 'bg-gray-100 text-gray-700',
+    cpp: 'bg-purple-100 text-purple-700',
+  };
+
+  const healthColor = (score: number) => {
+    if (score >= 80) return 'text-green-600';
+    if (score >= 50) return 'text-yellow-600';
+    return 'text-red-600';
+  };
+
+  const healthEmoji = (score: number) => {
+    if (score >= 80) return '🟢';
+    if (score >= 50) return '🟡';
+    return '🔴';
+  };
+
+  // Find the selected file's details
+  const selectedFileResult = result?.file_results.find(f => f.file_path === selectedFile);
+
+  return (
+    <div className="space-y-6">
+      {/* Upload Zone */}
+      <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2 font-display flex items-center">
+          <Upload className="w-6 h-6 mr-2 text-indigo-500" />
+          Upload Project
+        </h2>
+        <p className="text-sm text-gray-500 mb-6">Upload files or entire folders for batch analysis. Supports Python, JavaScript, Java, C, and C++.</p>
+
+        <div
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer ${
+            dragOver
+              ? 'border-indigo-400 bg-indigo-50 scale-[1.01]'
+              : 'border-gray-300 bg-gray-50 hover:border-indigo-300 hover:bg-indigo-50/50'
+          }`}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploading ? (
+            <div className="flex flex-col items-center">
+              <svg className="animate-spin h-10 w-10 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              <p className="text-indigo-600 font-semibold">Analyzing your project...</p>
+              <p className="text-xs text-gray-400 mt-1">This may take a moment for large projects</p>
+            </div>
+          ) : (
+            <div>
+              <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-700 font-semibold text-lg">Drag & drop files here</p>
+              <p className="text-gray-400 text-sm mt-1">or click to browse</p>
+            </div>
+          )}
+        </div>
+
+        {/* Hidden file inputs */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => e.target.files && handleUpload(e.target.files)}
+        />
+        <input
+          ref={folderInputRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => e.target.files && handleUpload(e.target.files)}
+          {...({ webkitdirectory: '', directory: '' } as any)}
+        />
+
+        <div className="flex gap-3 mt-4">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex-1 py-2.5 px-4 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all flex items-center justify-center"
+          >
+            <Code className="w-4 h-4 mr-2" /> Select Files
+          </button>
+          <button
+            onClick={() => folderInputRef.current?.click()}
+            disabled={uploading}
+            className="flex-1 py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg text-sm font-semibold text-white hover:from-indigo-700 hover:to-purple-700 transition-all flex items-center justify-center shadow-lg"
+          >
+            <Upload className="w-4 h-4 mr-2" /> Select Folder
+          </button>
+        </div>
+      </div>
+
+      {/* Results */}
+      {result && (
+        <div className="space-y-6">
+          {/* Project Health Dashboard */}
+          <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+            <h3 className="text-xl font-bold text-gray-800 mb-4 font-display">Project Health Dashboard</h3>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 p-4 rounded-xl border border-indigo-200 text-center">
+                <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">Health Score</p>
+                <p className={`text-3xl font-black mt-1 ${healthColor(result.project_summary.health_score)}`}>
+                  {healthEmoji(result.project_summary.health_score)} {result.project_summary.health_score}%
+                </p>
+              </div>
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200 text-center">
+                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider">Files</p>
+                <p className="text-3xl font-black text-blue-900 mt-1">{result.project_summary.total_files}</p>
+              </div>
+              <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-xl border border-green-200 text-center">
+                <p className="text-xs font-semibold text-green-600 uppercase tracking-wider">Lines</p>
+                <p className="text-3xl font-black text-green-900 mt-1">{result.project_summary.total_lines?.toLocaleString()}</p>
+              </div>
+              <div className="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-xl border border-red-200 text-center">
+                <p className="text-xs font-semibold text-red-600 uppercase tracking-wider">Issues</p>
+                <p className="text-3xl font-black text-red-900 mt-1">{result.project_summary.total_issues}</p>
+              </div>
+              <div className="bg-gradient-to-br from-amber-50 to-amber-100 p-4 rounded-xl border border-amber-200 text-center">
+                <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Time</p>
+                <p className="text-3xl font-black text-amber-900 mt-1">{result.project_summary.processing_time}s</p>
+              </div>
+            </div>
+
+            {/* Language Breakdown */}
+            {result.project_summary.language_breakdown && Object.keys(result.project_summary.language_breakdown).length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {Object.entries(result.project_summary.language_breakdown).map(([lang, count]) => (
+                  <span key={lang} className={`px-3 py-1 rounded-full text-xs font-bold ${langColors[lang] || 'bg-gray-100 text-gray-700'}`}>
+                    {lang}: {count} file{count > 1 ? 's' : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* File Results Table */}
+          <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <h3 className="text-lg font-bold text-gray-800 font-display">File-by-File Results</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3">File</th>
+                    <th className="px-6 py-3">Language</th>
+                    <th className="px-6 py-3">Lines</th>
+                    <th className="px-6 py-3">Issues</th>
+                    <th className="px-6 py-3">Severity</th>
+                    <th className="px-6 py-3">Complexity</th>
+                    <th className="px-6 py-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {result.file_results.map((file, idx) => (
+                    <tr key={idx} className={`hover:bg-gray-50 transition-colors ${selectedFile === file.file_path ? 'bg-indigo-50' : ''}`}>
+                      <td className="px-6 py-3">
+                        <span className="text-sm font-medium text-gray-800 font-mono">{file.file_path}</span>
+                      </td>
+                      <td className="px-6 py-3">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${langColors[file.language] || 'bg-gray-100 text-gray-700'}`}>{file.language}</span>
+                      </td>
+                      <td className="px-6 py-3 text-sm text-gray-600">{file.metrics.lines_of_code}</td>
+                      <td className="px-6 py-3">
+                        <span className={`text-sm font-bold ${file.issue_count > 0 ? 'text-red-600' : 'text-green-600'}`}>{file.issue_count}</span>
+                      </td>
+                      <td className="px-6 py-3">
+                        <div className="flex gap-1">
+                          {Object.entries(file.severity_counts).map(([sev, count]) => (
+                            <span key={sev} className="flex items-center gap-0.5 text-xs">
+                              <span className={`w-2 h-2 rounded-full ${severityDot[sev] || 'bg-gray-400'}`}></span>
+                              {count}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-3 text-sm text-gray-600">{file.metrics.complexity?.toFixed(1) || 'N/A'}</td>
+                      <td className="px-6 py-3">
+                        <button
+                          onClick={() => setSelectedFile(selectedFile === file.file_path ? null : file.file_path)}
+                          className="text-indigo-600 hover:text-indigo-800 font-semibold text-xs"
+                        >
+                          {selectedFile === file.file_path ? 'Hide' : 'View Issues'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Expanded File Detail */}
+          {selectedFileResult && (
+            <div className="bg-white rounded-xl shadow-lg border-2 border-indigo-200 p-6">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 font-mono">{selectedFileResult.file_path}</h4>
+              {selectedFileResult.issues.length > 0 ? (
+                <div className="space-y-3">
+                  {selectedFileResult.issues.map((issue, idx) => (
+                    <div key={idx} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <span className={`w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 ${severityDot[issue.severity] || 'bg-gray-400'}`}></span>
+                      <div>
+                        <div className="flex items-center space-x-2 mb-0.5">
+                          <span className="text-xs font-mono bg-gray-200 text-gray-700 px-2 py-0.5 rounded">L{issue.line}</span>
+                          <span className="text-sm font-semibold text-gray-800">{issue.type.replace(/_/g, ' ')}</span>
+                        </div>
+                        <p className="text-sm text-gray-600">{issue.message}</p>
+                        {issue.suggestion && (
+                          <p className="text-xs text-indigo-600 mt-1 italic">{issue.suggestion}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500 py-4">No issues found in this file. ✅</p>
+              )}
+            </div>
+          )}
+
+          {/* Skipped & Errors */}
+          {(result.skipped.length > 0 || result.errors.length > 0) && (
+            <div className="bg-white rounded-xl shadow border border-gray-200 p-5">
+              <h4 className="text-sm font-bold text-gray-600 uppercase tracking-wider mb-3">Skipped & Errors</h4>
+              {result.skipped.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-gray-500 mb-1">Skipped ({result.skipped.length})</p>
+                  <div className="flex flex-wrap gap-1">
+                    {result.skipped.slice(0, 20).map((s, i) => (
+                      <span key={i} className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded" title={s.reason}>{s.file}</span>
+                    ))}
+                    {result.skipped.length > 20 && <span className="text-xs text-gray-400">+{result.skipped.length - 20} more</span>}
+                  </div>
+                </div>
+              )}
+              {result.errors.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-red-500 mb-1">Errors ({result.errors.length})</p>
+                  {result.errors.map((e, i) => (
+                    <p key={i} className="text-xs text-red-600">{e.file}: {e.error}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};

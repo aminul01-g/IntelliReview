@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import hashlib
 from datetime import datetime
 import time
@@ -275,3 +275,192 @@ async def get_analysis_result(
         analyzed_at=analysis.completed_at or analysis.created_at,
         processing_time=analysis.processing_time
     )
+
+
+# Extension to language mapping
+EXT_LANG_MAP = {
+    '.py': 'python',
+    '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript',
+    '.ts': 'javascript', '.tsx': 'javascript',
+    '.java': 'java',
+    '.c': 'c', '.h': 'c',
+    '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.hpp': 'cpp',
+}
+
+# Files/dirs to always skip
+SKIP_PATTERNS = {
+    'node_modules', '__pycache__', '.git', '.venv', 'venv', 'dist', 'build',
+    '.next', '.nuxt', 'target', 'bin', 'obj', '.idea', '.vscode',
+    'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+}
+
+
+@router.post("/upload")
+async def analyze_uploaded_files(
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze uploaded files or folders. Accepts multiple files via multipart upload."""
+    import os
+    import asyncio
+    
+    start_time = time.time()
+    results = []
+    skipped = []
+    errors = []
+    
+    # Filter and process files
+    valid_files = []
+    for f in files:
+        filename = f.filename or "unknown"
+        
+        # Skip binary/non-code files and ignored directories
+        path_parts = filename.replace("\\", "/").split("/")
+        if any(part in SKIP_PATTERNS for part in path_parts):
+            skipped.append({"file": filename, "reason": "Ignored directory/file"})
+            continue
+        
+        ext = os.path.splitext(filename)[1].lower()
+        lang = EXT_LANG_MAP.get(ext)
+        if not lang:
+            skipped.append({"file": filename, "reason": f"Unsupported extension: {ext}"})
+            continue
+        
+        # Read file content
+        try:
+            content = (await f.read()).decode('utf-8', errors='replace')
+        except Exception as e:
+            errors.append({"file": filename, "error": f"Could not read file: {str(e)}"})
+            continue
+        
+        # Skip empty files or very large files
+        line_count = len(content.split('\n'))
+        if line_count == 0:
+            skipped.append({"file": filename, "reason": "Empty file"})
+            continue
+        if line_count > 10000:
+            skipped.append({"file": filename, "reason": f"Too large ({line_count} lines, max 10,000)"})
+            continue
+        
+        valid_files.append({"filename": filename, "content": content, "language": lang, "lines": line_count})
+    
+    if not valid_files:
+        return {
+            "project_summary": {
+                "total_files": 0,
+                "total_issues": 0,
+                "processing_time": round(time.time() - start_time, 2),
+            },
+            "file_results": [],
+            "skipped": skipped,
+            "errors": errors,
+        }
+    
+    # Analyze each file (cap at 20 files to avoid timeout)
+    for file_info in valid_files[:20]:
+        try:
+            code = file_info["content"]
+            lang = file_info["language"]
+            fname = file_info["filename"]
+            
+            # Parse
+            parser = parsers.get(lang)
+            if not parser:
+                errors.append({"file": fname, "error": f"No parser for {lang}"})
+                continue
+            
+            ast = parser.parse(code, fname)
+            
+            # Run static analysis
+            metrics_data = complexity_analyzer.analyze(code, lang)
+            duplicates = duplication_detector.detect(code)
+            antipatterns = antipattern_detector.detect(code, ast, lang)
+            security_issues = security_scanner.scan(code, fname, lang)
+            quality_issues = quality_detector.detect(code, fname, lang)
+            
+            all_issues = antipatterns + security_issues + quality_issues
+            for dup in duplicates:
+                all_issues.append({
+                    "type": "code_duplication",
+                    "severity": "medium",
+                    "line": dup["block1_start"],
+                    "message": f"Duplicate code found (similarity: {dup['similarity']})",
+                    "suggestion": "Consider extracting duplicated code into a reusable function"
+                })
+            
+            # Count by severity
+            severity_counts = {}
+            for issue in all_issues:
+                sev = issue.get("severity", "info")
+                severity_counts[sev] = severity_counts.get(sev, 0) + 1
+            
+            metrics_dict = {
+                "lines_of_code": metrics_data.get("lines_of_code", file_info["lines"]),
+                "complexity": metrics_data.get("average_complexity"),
+                "maintainability_index": metrics_data.get("maintainability_index"),
+                "duplication_percentage": round(len(duplicates) / max(file_info["lines"], 1) * 100, 1)
+            }
+            
+            # Save to DB
+            code_hash = hashlib.sha256(code.encode()).hexdigest()
+            analysis = Analysis(
+                user_id=current_user.id,
+                file_path=fname,
+                language=lang,
+                code_hash=code_hash,
+                status="completed",
+                issues=all_issues,
+                metrics=metrics_dict,
+                processing_time=round(time.time() - start_time, 2),
+                completed_at=datetime.utcnow()
+            )
+            db.add(analysis)
+            db.commit()
+            db.refresh(analysis)
+            
+            results.append({
+                "analysis_id": analysis.id,
+                "file_path": fname,
+                "language": lang,
+                "metrics": metrics_dict,
+                "issue_count": len(all_issues),
+                "severity_counts": severity_counts,
+                "issues": all_issues[:10],  # Return top 10 issues per file to avoid huge payloads
+                "status": "completed"
+            })
+        
+        except Exception as e:
+            logger.error(f"Error analyzing {file_info['filename']}: {e}")
+            errors.append({"file": file_info["filename"], "error": str(e)})
+    
+    # Build project-level summary
+    total_issues = sum(r["issue_count"] for r in results)
+    total_lines = sum(r["metrics"]["lines_of_code"] for r in results)
+    lang_breakdown = {}
+    for r in results:
+        lang_breakdown[r["language"]] = lang_breakdown.get(r["language"], 0) + 1
+    
+    # Compute overall health score (simple heuristic)
+    critical_high = sum(
+        r["severity_counts"].get("critical", 0) + r["severity_counts"].get("high", 0)
+        for r in results
+    )
+    if total_lines > 0:
+        health_score = max(0, min(100, 100 - (critical_high / max(total_lines, 1)) * 1000))
+    else:
+        health_score = 100
+    
+    return {
+        "project_summary": {
+            "total_files": len(results),
+            "total_lines": total_lines,
+            "total_issues": total_issues,
+            "health_score": round(health_score, 1),
+            "language_breakdown": lang_breakdown,
+            "processing_time": round(time.time() - start_time, 2),
+        },
+        "file_results": results,
+        "skipped": skipped,
+        "errors": errors,
+    }

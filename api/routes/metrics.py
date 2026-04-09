@@ -66,15 +66,20 @@ async def get_trends(
     """Get analysis trends over the last 30 days."""
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
     
-    trends = db.query(
-        func.date(Analysis.created_at).label('date'),
-        func.count(Analysis.id).label('count')
-    ).filter(
-        Analysis.user_id == current_user.id,
-        Analysis.created_at >= thirty_days_ago
-    ).group_by(func.date(Analysis.created_at)).order_by(func.date(Analysis.created_at)).all()
-    
-    return [{"date": str(t.date), "count": t.count} for t in trends]
+    try:
+        trends = db.query(
+            func.date(Analysis.created_at).label('date'),
+            func.count(Analysis.id).label('count')
+        ).filter(
+            Analysis.user_id == current_user.id,
+            Analysis.created_at >= thirty_days_ago
+        ).group_by(func.date(Analysis.created_at)).order_by(func.date(Analysis.created_at)).all()
+        
+        return [{"date": str(t.date), "count": t.count} for t in trends]
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Error fetching trends: {e}")
+        return []
 
 @router.get("/team")
 async def get_team_metrics(
@@ -83,7 +88,13 @@ async def get_team_metrics(
 ):
     """Get metrics for the user's team."""
     if not current_user.team_id:
-        return {"error": "User not in a team"}
+        # Return default team metrics if not assigned, avoiding UI errors 
+        return {
+            "team_name": "No Team Assigned",
+            "total_members": 1,
+            "total_analyses": 0,
+            "issue_distribution": {}
+        }
     
     # Get all users in the team
     team_members = db.query(User).filter(User.team_id == current_user.team_id).all()

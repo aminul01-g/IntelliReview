@@ -79,212 +79,117 @@ interface LoginResponse {
 // Mock API service (replace with actual API calls)
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
-// MOCK DATA FALLBACKS
-const MOCK_USER = { username: 'demo_user' };
-const MOCK_METRICS = {
-  total_analyses: 128,
-  weekly_analyses: 14,
-  language_breakdown: { Python: 60, JavaScript: 45, Java: 23 },
-  technical_debt_hours: 42,
-  user_since: '2023-01-01'
-};
-const MOCK_TRENDS = [
-  { date: 'Mon', count: 12 }, { date: 'Tue', count: 19 },
-  { date: 'Wed', count: 15 }, { date: 'Thu', count: 22 },
-  { date: 'Fri', count: 30 }, { date: 'Sat', count: 5 }, { date: 'Sun', count: 8 }
-];
-const MOCK_TEAM = {
-  team_name: 'Core Platform',
-  total_members: 8,
-  total_analyses: 452,
-  issue_distribution: { Security: 12, Performance: 34, Style: 150, Bugs: 45 }
-};
-const MOCK_FEEDBACK = {
-  statistics: {
-    Security: { total_suggestions: 40, acceptance_rate: 0.85, rejection_rate: 0.15 },
-    Performance: { total_suggestions: 100, acceptance_rate: 0.92, rejection_rate: 0.08 },
-    Style: { total_suggestions: 300, acceptance_rate: 0.70, rejection_rate: 0.30 }
-  },
-  total_issue_types: 3
-};
-const MOCK_HISTORY: AnalysisResult[] = [
-  {
-    analysis_id: 1, status: 'completed', language: 'python', file_path: 'src/main.py',
-    metrics: { lines_of_code: 150, complexity: 12.5 },
-    issues: [{ type: 'Security', severity: 'high', line: 42, message: 'Hardcoded secret detected' }],
-    analyzed_at: new Date().toISOString()
-  }
-];
-
-const handleApiError = async (response: Response, isMockAllowed=true) => {
+const handleApiError = async (response: Response) => {
+  let errorMessage = `HTTP Error ${response.status} - API Request failed.`;
+  try {
+    const errorData = await response.json();
+    errorMessage = errorData.detail || errorData.error || errorMessage;
+  } catch (e) {
     try {
-        const error = await response.json();
-        throw new Error(error.detail || 'API Request failed');
-    } catch(e) {
-        if(isMockAllowed) throw new Error('API_UNAVAILABLE');
-        throw new Error('Server returned an error that could not be parsed.');
-    }
-}
+      const text = await response.text();
+      if (text) errorMessage = `Server Error: ${text.substring(0, 100)}`;
+    } catch (inner) {}
+  }
+  throw new Error(errorMessage);
+};
 
 const api = {
   login: async (username: string, password: string): Promise<LoginResponse> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ username, password }),
-          credentials: 'include'
-        });
-        if (!response.ok) await handleApiError(response, true);
-        return await response.json();
-    } catch(e: any) {
-        if(e.message === 'API_UNAVAILABLE' && username === 'demo') {
-             return { access_token: 'mock_token', token_type: 'bearer'};
-        }
-        throw e;
-    }
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ username, password }),
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
   },
 
   register: async (username: string, email: string, password: string): Promise<any> => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, email, password }),
-        });
-        if (!response.ok) await handleApiError(response, true);
-        return await response.json();
-     } catch (e: any) {
-         if(e.message === 'API_UNAVAILABLE') {
-             // Return true for demo
-             return { message: 'Demo registration successful' }
-         }
-         throw e;
-     }
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password }),
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
   },
 
   checkAuth: async (): Promise<User> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/auth/me`, {
-          credentials: 'include'
-        });
-        if (!response.ok) await handleApiError(response, false);
-        return await response.json();
-    } catch(e) {
-        throw new Error('Not authenticated');
+    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      credentials: 'include'
+    });
+    if (!response.ok) {
+       throw new Error('Not authenticated');
     }
+    return await response.json();
   },
 
   analyze: async (code: string, language: string): Promise<AnalysisResult> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/analysis/analyze`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ code, language }),
-          credentials: 'include'
-        });
-        if (!response.ok) await handleApiError(response, true);
-        return await response.json();
-    } catch(e:any) {
-        if(e.message === 'API_UNAVAILABLE') {
-            return {
-                analysis_id: 999,
-                status: 'completed',
-                language,
-                file_path: 'snippet',
-                metrics: { lines_of_code: code.split('\n').length, complexity: 5 },
-                issues: [{ type: 'Demo Issue', severity: 'medium', line: 1, message: 'This is a demo issue', suggestion: 'Demo suggestion to fix this.'}],
-                processing_time: 1.5,
-                analyzed_at: new Date().toISOString()
-            }
-        }
-        throw e;
-    }
+    const response = await fetch(`${API_BASE_URL}/analysis/analyze`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ code, language }),
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
   },
 
   getMetrics: async (): Promise<Metrics> => {
-     try {
-        const response = await fetch(`${API_BASE_URL}/metrics/user`, {
-          credentials: 'include'
-        });
-        if (!response.ok) await handleApiError(response, true);
-        return await response.json();
-     } catch (e:any) {
-         if(e.message === 'API_UNAVAILABLE') return MOCK_METRICS;
-         throw e;
-     }
+    const response = await fetch(`${API_BASE_URL}/metrics/user`, {
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
   },
 
   getTrends: async (): Promise<TrendData[]> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/metrics/trends`, {
-          credentials: 'include'
-        });
-        if (!response.ok) await handleApiError(response, true);
-        return await response.json();
-    } catch(e:any) {
-        if(e.message === 'API_UNAVAILABLE') return MOCK_TRENDS;
-        throw e;
-    }
+    const response = await fetch(`${API_BASE_URL}/metrics/trends`, {
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
   },
 
   getTeamMetrics: async (): Promise<TeamMetrics> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/metrics/team`, {
-          credentials: 'include'
-        });
-        if (!response.ok) await handleApiError(response, true);
-        return await response.json();
-    } catch(e:any) {
-         if(e.message === 'API_UNAVAILABLE') return MOCK_TEAM;
-         throw e;
-    }
+    const response = await fetch(`${API_BASE_URL}/metrics/team`, {
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
   },
 
   getHistory: async (): Promise<AnalysisResult[]> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/analysis/history`, {
-          credentials: 'include'
-        });
-        if (!response.ok) await handleApiError(response, true);
-        return await response.json();
-    } catch(e:any) {
-        if(e.message === 'API_UNAVAILABLE') return MOCK_HISTORY;
-        throw e;
-    }
+    const response = await fetch(`${API_BASE_URL}/analysis/history`, {
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
   },
 
   submitFeedback: async (suggestion_id: string, accepted: boolean, issue_type: string): Promise<any> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/feedback/submit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ suggestion_id, accepted, issue_type }),
-          credentials: 'include'
-        });
-        if (!response.ok) await handleApiError(response, true);
-        return await response.json();
-    } catch(e:any) {
-        if(e.message === 'API_UNAVAILABLE') return { success: true };
-        throw e;
-    }
+    const response = await fetch(`${API_BASE_URL}/feedback/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ suggestion_id, accepted, issue_type }),
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
   },
 
   getFeedbackStats: async (): Promise<FeedbackStats> => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/feedback/stats`, {
-          credentials: 'include'
-        });
-        if (!response.ok) await handleApiError(response, true);
-        return await response.json();
-    } catch(e:any) {
-        if(e.message === 'API_UNAVAILABLE') return MOCK_FEEDBACK;
-        throw e;
-    }
+    const response = await fetch(`${API_BASE_URL}/feedback/stats`, {
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
   }
 };
+
 
 // Main Dashboard Component
 const IntelliReviewDashboard = () => {

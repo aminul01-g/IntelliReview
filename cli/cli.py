@@ -7,6 +7,7 @@ from rich.table import Table
 from rich.progress import Progress
 from rich.panel import Panel
 from rich.syntax import Syntax
+from rich.markdown import Markdown
 import requests
 import json
 from typing import Optional
@@ -113,6 +114,31 @@ class APIClient:
             return response.json()
         else:
             raise Exception(f"Failed to get metrics: {response.json().get('detail')}")
+            
+    def upload_project(self, file_paths: list) -> dict:
+        """Upload files to the /upload endpoint for project-level analysis."""
+        files = []
+        try:
+            for fpath in file_paths:
+                files.append(('files', (str(fpath), open(fpath, 'rb'))))
+            
+            headers = {}
+            if self.token:
+                headers['Authorization'] = f'Bearer {self.token}'
+            
+            response = requests.post(
+                f'{self.base_url}/analysis/upload',
+                files=files,
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise Exception(f"Upload failed: {response.json().get('detail', response.text)}")
+        finally:
+            for f_tuple in files:
+                f_tuple[1][1].close()
 
 
 api = APIClient()
@@ -214,36 +240,27 @@ def analyze_dir(directory: str, recursive: bool, language: Optional[str]):
         console.print(f"[yellow]No files found in {directory}")
         return
     
-    console.print(f"[cyan]Found {len(files)} files to analyze[/cyan]\n")
+    console.print(f"[cyan]Found {len(files)} files to analyze. Preparing upload...[/cyan]\n")
     
-    total_issues = 0
-    
-    with Progress() as progress:
-        task = progress.add_task("[green]Analyzing...", total=len(files))
+    try:
+        with console.status(f"[bold green]Uploading and analyzing {len(files)} files...", spinner='dots'):
+            result = api.upload_project([str(p) for p in files])
+            
+        summary = result.get('project_summary', {})
+        health = summary.get('health_score', 'N/A')
         
-        for file_path in files:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    code = f.read()
-                
-                # Detect language
-                ext = file_path.suffix
-                lang_map = {'.py': 'python', '.js': 'javascript', '.java': 'java'}
-                lang = lang_map.get(ext, 'python')
-                
-                result = api.analyze(code, lang, str(file_path))
-                issues_count = len(result.get('issues', []))
-                total_issues += issues_count
-                
-                if issues_count > 0:
-                    console.print(f"  {file_path}: [red]{issues_count} issues[/red]")
+        console.print(f"\n[bold]✅ Analysis Complete! Health Score: {health}%[/bold]\n")
+        
+        if 'ai_project_review' in result and result['ai_project_review']:
+            md = Markdown(result['ai_project_review'])
+            console.print(Panel(md, title="[bold emerald]🤖 AI Project Audit Report[/bold emerald]", border_style="green"))
+        else:
+            console.print("[yellow]No AI Project Review available in the response.[/yellow]")
             
-            except Exception as e:
-                console.print(f"  [red]✗[/red] {file_path}: {str(e)}")
-            
-            progress.update(task, advance=1)
-    
-    console.print(f"\n[cyan]Total issues found: {total_issues}[/cyan]")
+        console.print(f"\n[cyan]Processed {summary.get('total_files')} files | {summary.get('total_issues')} total issues found.[/cyan]")
+        
+    except Exception as e:
+        console.print(f"[red]✗ Failed to run project analysis: {str(e)}[/red]")
 
 
 @cli.command()

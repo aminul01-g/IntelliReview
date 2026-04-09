@@ -1,0 +1,125 @@
+help:
+	@echo "IntelliReview - Available Commands"
+	@echo "=================================="
+	@echo "make build       - Build Docker images"
+	@echo "make up          - Start all services"
+	@echo "make down        - Stop all services"
+	@echo "make logs        - View logs"
+	@echo "make shell       - Open shell in API container"
+	@echo "make test        - Run tests"
+	@echo "make lint        - Run linters"
+	@echo "make format      - Format code"
+	@echo "make clean       - Clean up containers and volumes"
+	@echo "make migrate     - Run database migrations"
+	@echo "make seed        - Seed database with sample data"
+
+build:
+	docker-compose build
+
+up:
+	docker-compose up -d
+	@echo "Services started! API available at http://localhost:8000"
+	@echo "API docs: http://localhost:8000/docs"
+
+down:
+	docker-compose down
+
+logs:
+	docker-compose logs -f
+
+logs-api:
+	docker-compose logs -f api
+
+shell:
+	docker-compose exec api /bin/bash
+
+test:
+	docker-compose exec api pytest tests/ -v --cov=. --cov-report=html
+
+test-local:
+	pytest tests/ -v --cov=. --cov-report=html
+
+lint:
+	docker-compose exec api flake8 .
+	docker-compose exec api pylint api analyzer ml_models cli
+
+format:
+	docker-compose exec api black .
+	docker-compose exec api isort .
+
+clean:
+	docker-compose down -v
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type f -name "*.pyc" -delete
+	rm -rf .pytest_cache .coverage htmlcov
+
+migrate:
+	docker-compose exec api alembic upgrade head
+
+seed:
+	docker-compose exec api python scripts/seed_data.py
+
+# Development commands
+dev-up:
+	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+dev-build:
+	docker-compose -f docker-compose.yml -f docker-compose.dev.yml build
+
+# Database commands
+db-reset:
+	docker-compose down -v
+	docker-compose up -d postgres mongodb redis
+	sleep 5
+	make migrate
+	make seed
+
+
+# ============================================================================
+# scripts/start.sh - Startup Script
+# ============================================================================
+
+#!/bin/bash
+
+set -e
+
+echo "Starting IntelliReview..."
+
+# Check if .env exists
+if [ ! -f .env ]; then
+    echo "Creating .env file from .env.example..."
+    cp .env.example .env
+    echo "Please update .env with your configuration"
+fi
+
+# Check Docker is running
+if ! docker info > /dev/null 2>&1; then
+    echo "Error: Docker is not running"
+    exit 1
+fi
+
+# Build images
+echo "Building Docker images..."
+docker-compose build
+
+# Start services
+echo "Starting services..."
+docker-compose up -d
+
+# Wait for services to be healthy
+echo "Waiting for services to be ready..."
+sleep 10
+
+# Check health
+echo "Checking service health..."
+curl -f http://localhost:8000/health || exit 1
+
+echo ""
+echo "✓ IntelliReview is running!"
+echo ""
+echo "API: http://localhost:8000"
+echo "API Docs: http://localhost:8000/docs"
+echo ""
+echo "To view logs: docker-compose logs -f"
+echo "To stop: docker-compose down"
+

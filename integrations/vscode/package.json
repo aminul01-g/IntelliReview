@@ -1,0 +1,27 @@
+{
+  "name": "intellireview",
+  "displayName": "IntelliReview",
+  "description": "AI-Powered Code Review Assistant",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:python",
+    "onLanguage:javascript",
+    "onLanguage:java"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "intellireview.analyze",
+        "title": "IntelliReview: Analyze File"
+      }
+    ]
+  }
+}

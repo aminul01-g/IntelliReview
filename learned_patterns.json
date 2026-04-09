@@ -1,0 +1,29 @@
+{
+  "bug": {
+    "total": 4,
+    "accepted": 4,
+    "rejected": 0,
+    "examples": [
+      {
+        "suggestion_id": "unknown",
+        "accepted": true,
+        "context_hash": 0
+      },
+      {
+        "suggestion_id": "unknown",
+        "accepted": true,
+        "context_hash": 0
+      },
+      {
+        "suggestion_id": "test_id_123",
+        "accepted": true,
+        "context_hash": 0
+      },
+      {
+        "suggestion_id": "test_id_123",
+        "accepted": true,
+        "context_hash": 0
+      }
+    ]
+  }
+}

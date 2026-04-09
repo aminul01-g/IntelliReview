@@ -105,7 +105,7 @@ async def analyze_code(
         metrics_data, duplicates, antipatterns, security_issues, quality_issues = await asyncio.gather(*static_tasks)
         
         # Combine all issues
-        ai_patterns = ai_pattern_detector.detect(code, request.file_path or "unknown", request.language)
+        ai_patterns = ai_pattern_detector.detect(request.code, request.file_path or "unknown", request.language)
         all_issues = antipatterns + security_issues + quality_issues + ai_patterns
         
         # Add duplication issues
@@ -497,4 +497,153 @@ async def analyze_uploaded_files(
         "file_results": results,
         "skipped": skipped,
         "errors": errors,
+    }
+
+
+# ─── Diff Review Mode ───────────────────────────────────────────────
+# Reviews only the changed lines in a unified diff, producing focused
+# analysis on what actually changed rather than the entire file.
+
+from pydantic import BaseModel
+
+class DiffReviewRequest(BaseModel):
+    diff: str  # Unified diff text (output of `git diff`)
+    context_lines: int = 3  # Extra context lines around changes
+
+def _parse_unified_diff(diff_text: str) -> List[dict]:
+    """Parse a unified diff into a list of changed file entries."""
+    files = []
+    current_file = None
+    current_hunks = []
+
+    for line in diff_text.split("\n"):
+        # New file header
+        if line.startswith("+++ b/"):
+            fname = line[6:]
+            if current_file:
+                files.append({"file": current_file, "hunks": current_hunks})
+            current_file = fname
+            current_hunks = []
+        elif line.startswith("@@"):
+            # Hunk header like @@ -10,5 +10,8 @@
+            import re
+            match = re.search(r'\+(\d+)', line)
+            start_line = int(match.group(1)) if match else 1
+            current_hunks.append({"start": start_line, "added_lines": [], "context": []})
+        elif current_hunks:
+            if line.startswith("+") and not line.startswith("+++"):
+                current_hunks[-1]["added_lines"].append(line[1:])
+            elif line.startswith(" "):
+                current_hunks[-1]["context"].append(line[1:])
+
+    if current_file:
+        files.append({"file": current_file, "hunks": current_hunks})
+
+    return files
+
+
+@router.post("/diff-review")
+async def review_diff(
+    request: DiffReviewRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Review only the changed lines in a git diff.
+
+    Accepts a unified diff (from `git diff`) and analyzes only the added/changed
+    lines, producing a focused report on the delta quality.
+    """
+    parsed = _parse_unified_diff(request.diff)
+
+    if not parsed:
+        return {"message": "No parseable changes found in the diff", "files": []}
+
+    results = []
+
+    for entry in parsed:
+        fname = entry["file"]
+        ext = "." + fname.rsplit(".", 1)[-1] if "." in fname else ""
+        lang = EXT_LANG_MAP.get(ext.lower())
+        if not lang:
+            continue
+
+        # Build code from added lines across all hunks
+        added_code = "\n".join(
+            line for hunk in entry["hunks"] for line in hunk["added_lines"]
+        )
+        if not added_code.strip():
+            continue
+
+        # Run static analysis on the added code
+        parser = parsers.get(lang)
+        try:
+            ast = parser.parse(added_code, fname) if parser else {}
+            antipatterns = antipattern_detector.detect(added_code, ast, lang)
+            security_issues = security_scanner.scan(added_code, fname, lang)
+            quality_issues = quality_detector.detect(added_code, fname, lang)
+            ai_patterns = ai_pattern_detector.detect(added_code, fname, lang)
+
+            all_issues = antipatterns + security_issues + quality_issues + ai_patterns
+
+            # Adjust line numbers to be relative to hunk start
+            for hunk in entry["hunks"]:
+                for issue in all_issues:
+                    if issue["line"] <= len(hunk["added_lines"]):
+                        issue["line"] = hunk["start"] + issue["line"] - 1
+
+            if all_issues:
+                results.append({
+                    "file": fname,
+                    "language": lang,
+                    "added_lines": len(added_code.split("\n")),
+                    "issues": all_issues[:15],
+                    "issue_count": len(all_issues),
+                })
+        except Exception as e:
+            logger.warning(f"Diff analysis failed for {fname}: {e}")
+
+    # Score the diff quality
+    total_issues = sum(r["issue_count"] for r in results)
+    total_added = sum(r["added_lines"] for r in results)
+    quality_verdict = "✅ Clean" if total_issues == 0 else (
+        "⚠️ Needs attention" if total_issues < 5 else "🔴 Review required"
+    )
+
+    return {
+        "verdict": quality_verdict,
+        "total_added_lines": total_added,
+        "total_issues": total_issues,
+        "files_reviewed": len(results),
+        "file_results": results,
+    }
+
+
+# ─── Custom Rules Endpoint ──────────────────────────────────────────
+
+from analyzer.rules.custom_rules import CustomRuleEngine
+
+class CustomRulesRequest(BaseModel):
+    code: str
+    language: str
+    filename: str = "unknown"
+    rules: List[dict]  # List of rule definitions
+
+@router.post("/custom-rules")
+async def run_custom_rules(
+    request: CustomRulesRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Evaluate custom YAML-style rules against code.
+
+    Accepts a list of rule definitions and evaluates them against the
+    provided code. Useful for enforcing team-specific conventions.
+    """
+    engine = CustomRuleEngine(rules=request.rules)
+    issues = engine.evaluate(request.code, request.filename, request.language)
+
+    return {
+        "filename": request.filename,
+        "language": request.language,
+        "rules_evaluated": len(request.rules),
+        "issues_found": len(issues),
+        "issues": issues,
     }

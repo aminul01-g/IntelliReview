@@ -1,8 +1,20 @@
 {
-  "buildCommand": "cd dashboard && npm install && npm run build",
-  "outputDirectory": "dashboard/dist",
-  "rewrites": [
-    { "source": "/api/v1/:path*", "destination": "/api/main.py" },
-    { "source": "/health", "destination": "/api/main.py" }
+  "builds": [
+    {
+      "src": "dashboard/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    },
+    {
+      "src": "api/main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    { "src": "/api/v1/(.*)", "dest": "/api/main.py" },
+    { "src": "/health", "dest": "/api/main.py" },
+    { "src": "/(.*)", "dest": "/dashboard/$1" }
   ]
 }

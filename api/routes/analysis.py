@@ -158,6 +158,26 @@ async def analyze_code(
         
         enhanced_issues = filtered_issues
 
+        # Generate a single executive-level AI overview for the whole file
+        try:
+            ai_overview_text = await suggestion_generator.generate_general_review_async(
+                request.code, all_issues, request.language
+            )
+        except Exception as e:
+            logger.warning(f"AI overview generation failed: {e}")
+            ai_overview_text = None
+
+        # Inject it as a special issue at the top of the list
+        if ai_overview_text:
+            overview_issue = {
+                "type": "ai_overview",
+                "severity": "info",
+                "line": 0,
+                "message": "Executive AI Code Review",
+                "suggestion": ai_overview_text
+            }
+            enhanced_issues = [overview_issue] + enhanced_issues
+
         # Update analysis record
         metrics_dict = {
             "lines_of_code": metrics_data.get("lines_of_code", len(request.code.split('\n'))),

@@ -154,85 +154,109 @@ class SuggestionGenerator:
         language: str,
         context: Optional[str]
     ) -> str:
-        """Build the prompt for the AI model based on the user's expert SQE requirements."""
+        """Build a concise per-issue prompt that returns only a short fix."""
         
         issue_type = issue.get('type', 'unknown')
         severity = issue.get('severity', 'medium')
         message = issue.get('message', '')
         line = issue.get('line', 0)
         
-        prompt = f"""Role:
-                        You are an expert Software Analysis and Bug Detection Engineer.
-                        You specialize in analyzing source code across multiple programming languages and identifying bugs, errors, and code quality issues.
+        prompt = f"""You are an expert code reviewer. A static analyzer found the following issue in {language} code.
 
-                    Objective:
-                        Analyze any given source code—regardless of programming language—and accurately identify syntactic errors, logical flaws, runtime risks, and bad programming practices.
+Issue: {issue_type} (severity: {severity})
+Line {line}: {message}
 
-                    Responsibilities:
-                        - Detect syntax errors, compile-time errors, and runtime risks
-                        - Identify logical mistakes, incorrect conditions, and faulty loops
-                        - Detect misuse of language-specific libraries, APIs, and data structures
-                        - Identify out-of-bounds access, null references, and memory issues
-                        - Highlight security vulnerabilities and unsafe coding patterns
-                        - Recognize performance bottlenecks and inefficient constructs
-                        - Adapt analysis based on the detected programming language
-                        - Clearly explain where the bug is, why it occurs, and its impact
+Source code:
+```{language}
+{code}
+```
 
-                    Analysis Rules:
-                        1. First detect and infer the programming language automatically
-                        2. Perform static analysis without executing the code
-                        3. Do not assume code correctness
-                        4. Be precise, structured, and technical in explanations
-                        5. Avoid vague statements like “might be wrong” unless uncertainty exists
-                        6. Never modify the code unless explicitly requested
+Provide a concise response in this EXACT format (no extra sections):
 
-                    Output Format:
-                        ### 1. Detected Programming Language
-                        [Detect and state the language]
+**Problem:** One sentence explaining what is wrong and why.
 
-                        ### 2. Total Number of Issues Found
-                        [Summary of the identified issue and any related ones]
+**Fix:**
+```{language}
+// corrected code snippet for the affected line(s) only
+```
 
-                        ### 3. Categorized List of Issues
-                        **A. Syntax Errors**
-                        [List if any]
+**Impact:** One sentence on what could happen if this is not fixed.
 
-                        **B. Logical Errors**
-                        [List if any]
+Keep your entire response under 150 words. Do NOT repeat the full file. Only show the affected line(s)."""
 
-                        **C. Runtime Risks**
-                        [List if any]
-
-                        **D. API / Library Misuse**
-                        [List if any]
-
-                        **E. Performance Issues**
-                        [List if any]
-
-                        ### 4. Detailed Line-Level Explanation
-                        **Line {line}**: {message}
-                        [Provide deep technical explanation of the issue, why it occurs, and its impact]
-
-                        ### 5. Severity Level
-                        {severity.upper()}
-
-                        ### 6. Recommended Solution (SQE Best Practice)
-                        Provide a clear, engineer-level fix with code examples in Markdown blocks.
-
-                        ### 7. Professional Summary
-                        [Concise summary suitable for developers and technical reviewers]
-
-                        ---
-                        Current Language Context: {language}
-                        File Content:
-                        ```{language}
-                        {code}
-                        ```
-                        """
         if context:
             prompt += f"\nAdditional Context:\n{context}\n"
         
         return prompt
+    
+    def _build_general_review_prompt(self, code: str, issues: List[Dict], language: str) -> str:
+        """Build a prompt for an executive-level general code review."""
+        
+        # Summarize the detected issues for the AI
+        issue_summary_lines = []
+        for i, issue in enumerate(issues[:20], 1):  # Cap at 20 to avoid token overflow
+            issue_summary_lines.append(
+                f"  {i}. [{issue.get('severity', 'medium').upper()}] Line {issue.get('line', '?')}: "
+                f"{issue.get('type', 'unknown')} — {issue.get('message', '')}"
+            )
+        issue_summary = "\n".join(issue_summary_lines) if issue_summary_lines else "  No issues detected."
+        
+        prompt = f"""You are a Principal Software Engineer conducting a formal code review.
+
+Language: {language}
+Total issues detected by static analysis: {len(issues)}
+
+Detected issues:
+{issue_summary}
+
+Full source code:
+```{language}
+{code}
+```
+
+Write a professional **Executive Code Review** in Markdown using this structure:
+
+## 🔍 Overview
+One paragraph summarizing the code's purpose and overall quality.
+
+## 📊 Issue Summary
+| Category | Count | Severity |
+|----------|-------|----------|
+Group the detected issues into categories (Syntax, Logic, Security, Performance, Style) with counts.
+
+## 🚨 Critical Findings
+List the top 3 most important issues with brief explanations. If none are critical, state that.
+
+## 🛡️ Security Assessment
+One paragraph on security posture. Mention specific vulnerabilities if found.
+
+## ⚡ Performance Notes
+One paragraph on performance considerations.
+
+## ✅ Recommendations
+A numbered list of the top 5 actionable improvements, ordered by priority.
+
+## 📝 Verdict
+One sentence: is this code ready for production? Rate it: 🔴 Critical Issues / 🟡 Needs Work / 🟢 Good to Go.
+
+Keep the entire review concise and professional (under 600 words)."""
+        
+        return prompt
+    
+    async def generate_general_review_async(self, code: str, issues: List[Dict], language: str) -> str:
+        """Generate a single executive-level review of the entire codebase."""
+        prompt = self._build_general_review_prompt(code, issues, language)
+        
+        try:
+            if self.provider == "huggingface":
+                response = await self._call_huggingface_async_long(prompt)
+            elif self.provider == "openai":
+                response = self._call_openai(prompt)
+            else:
+                response = self._call_anthropic(prompt)
+            return response
+        except Exception as e:
+            return f"⚠️ AI Review unavailable: {str(e)}"
     
     async def generate_suggestion_async(
         self,
@@ -288,14 +312,14 @@ class SuggestionGenerator:
             raise Exception(f"Hugging Face API error (router failed): {str(e)}")
 
     async def _call_huggingface_async(self, prompt: str) -> str:
-        """Call Hugging Face Inference API asynchronously."""
+        """Call Hugging Face Inference API asynchronously (short responses)."""
         import httpx
         url = "https://router.huggingface.co/v1/chat/completions"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 500,
+            "max_tokens": 300,
             "temperature": 0.3
         }
         async with httpx.AsyncClient() as client:
@@ -306,6 +330,26 @@ class SuggestionGenerator:
                 return data["choices"][0]["message"]["content"].strip()
             except Exception as e:
                 raise Exception(f"Hugging Face Async API error: {str(e)}")
+
+    async def _call_huggingface_async_long(self, prompt: str) -> str:
+        """Call Hugging Face Inference API asynchronously (long responses for general review)."""
+        import httpx
+        url = "https://router.huggingface.co/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 1500,
+            "temperature": 0.3
+        }
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(url, headers=headers, json=payload, timeout=90.0)
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"].strip()
+            except Exception as e:
+                raise Exception(f"Hugging Face Async API error (long): {str(e)}")
 
     def _call_openai(self, prompt: str) -> str:
         """Call OpenAI API."""

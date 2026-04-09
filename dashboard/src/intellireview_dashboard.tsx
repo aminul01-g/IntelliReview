@@ -102,6 +102,7 @@ interface ProjectUploadResult {
     language_breakdown: Record<string, number>;
     processing_time: number;
   };
+  ai_project_review?: string;
   file_results: FileResult[];
   skipped: { file: string; reason: string }[];
   errors: { file: string; error: string }[];
@@ -1110,6 +1111,30 @@ const ProjectUploadView: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* AI Project Audit Report */}
+          {result.ai_project_review && (
+            <div className="bg-white rounded-xl shadow-lg border-2 border-emerald-200 overflow-hidden">
+              <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 px-6 py-4">
+                <div className="flex items-center space-x-3">
+                  <div className="bg-white/20 p-2 rounded-lg backdrop-blur-sm">
+                    <CheckCircle className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">AI Project Audit Report</h3>
+                    <p className="text-emerald-200 text-xs">Holistic architectural analysis by IntelliReview Agent</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6">
+                <div className="prose prose-sm max-w-none prose-slate prose-headings:text-slate-900 prose-headings:font-bold prose-h2:text-base prose-h2:mt-5 prose-h2:mb-2 prose-code:text-emerald-600 prose-code:bg-emerald-50 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-pre:bg-slate-900 prose-pre:text-slate-100 prose-pre:rounded-xl prose-table:text-sm prose-th:bg-slate-100 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 prose-li:my-0.5">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {result.ai_project_review}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* File Results Table */}
           <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">

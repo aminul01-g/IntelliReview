@@ -258,6 +258,125 @@ Keep the entire review concise and professional (under 600 words)."""
         except Exception as e:
             return f"⚠️ AI Review unavailable: {str(e)}"
     
+    def _build_project_review_prompt(self, file_manifest: List[Dict], project_summary: Dict) -> str:
+        """Build a prompt for a holistic project-level architectural review."""
+        
+        # Build file tree representation
+        file_tree_lines = []
+        for f in file_manifest[:30]:  # Cap to fit token limit
+            issues_str = f", {f['issue_count']} issues" if f.get('issue_count', 0) > 0 else ""
+            file_tree_lines.append(
+                f"  {f['file_path']} ({f['language']}, {f['lines']} lines{issues_str})"
+            )
+        file_tree = "\n".join(file_tree_lines)
+        
+        # Build per-file issue summary
+        issue_details = []
+        for f in file_manifest[:20]:
+            if f.get('issue_count', 0) > 0:
+                sev_str = ", ".join(f"{k}: {v}" for k, v in f.get('severity_counts', {}).items())
+                top_issues = []
+                for iss in f.get('issues', [])[:3]:
+                    top_issues.append(f"    - L{iss.get('line', '?')}: [{iss.get('severity', '?')}] {iss.get('type', '?')} — {iss.get('message', '')}")
+                issue_details.append(
+                    f"  **{f['file_path']}** ({sev_str})\n" + "\n".join(top_issues)
+                )
+        issues_section = "\n".join(issue_details) if issue_details else "  No significant issues found across the project."
+        
+        # Build code snippets for the most critical files (first 500 chars each)
+        code_snippets = []
+        for f in file_manifest[:5]:
+            if f.get('content'):
+                snippet = f['content'][:800]
+                code_snippets.append(f"### {f['file_path']}\n```{f['language']}\n{snippet}\n```")
+        code_section = "\n\n".join(code_snippets) if code_snippets else "Code snippets not available."
+        
+        prompt = f"""You are a Principal Software Architect conducting a comprehensive project audit.
+
+## Project Overview
+- Total files: {project_summary.get('total_files', 0)}
+- Total lines of code: {project_summary.get('total_lines', 0)}
+- Total issues detected: {project_summary.get('total_issues', 0)}
+- Health score: {project_summary.get('health_score', 'N/A')}%
+- Languages: {', '.join(f"{k} ({v} files)" for k, v in project_summary.get('language_breakdown', {}).items())}
+
+## File Structure
+{file_tree}
+
+## Issue Summary by File
+{issue_details}
+
+## Key Source Code
+{code_section}
+
+---
+
+Write a **Professional Project Audit Report** in Markdown using this structure:
+
+## 🏗️ Architecture Overview
+Analyze the project structure. Identify the architectural pattern (MVC, microservices, monolith, etc.), module organization, and separation of concerns. Note if the structure follows best practices for the detected language(s).
+
+## 📁 Code Organization Assessment
+- Is the file/folder structure logical and maintainable?
+- Are there signs of code smell at the structural level (god files, circular dependencies, mixed concerns)?
+- Recommendations for reorganization if needed.
+
+## 🔍 Cross-File Analysis
+Identify patterns that span multiple files:
+- Repeated patterns or anti-patterns across files
+- Inconsistent coding styles between files
+- Shared vulnerabilities or systemic issues
+- Common error handling patterns (or lack thereof)
+
+## 🧪 Quality Metrics Interpretation
+Interpret the static analysis results holistically:
+- What does the health score of {project_summary.get('health_score', 'N/A')}% mean for this project?
+- Are the issues concentrated in specific files or spread evenly?
+- Which files need the most urgent attention?
+
+## 🚀 Production Readiness Checklist
+Rate each (✅ Ready / ⚠️ Needs Work / ❌ Missing):
+- Error handling & graceful degradation
+- Input validation & sanitization
+- Security best practices
+- Logging & monitoring readiness
+- Configuration management
+- Test coverage indicators
+- Documentation quality
+
+## 📋 Priority Action Items
+A numbered list of the top 7 most impactful improvements, ordered by priority. For each item explain:
+1. What to fix
+2. Which file(s)
+3. Why it matters
+
+## 📊 Final Verdict
+Rate the project overall:
+- 🔴 **Not Production Ready** — Critical blockers exist
+- 🟡 **Needs Significant Work** — Functional but risky
+- 🟢 **Production Ready** — Minor improvements only
+
+One paragraph final assessment.
+
+Keep the entire review under 800 words. Be specific, cite file names and line numbers where possible."""
+        
+        return prompt
+    
+    async def generate_project_review_async(self, file_manifest: List[Dict], project_summary: Dict) -> str:
+        """Generate a holistic project-level architectural review."""
+        prompt = self._build_project_review_prompt(file_manifest, project_summary)
+        
+        try:
+            if self.provider == "huggingface":
+                response = await self._call_huggingface_async_long(prompt)
+            elif self.provider == "openai":
+                response = self._call_openai(prompt)
+            else:
+                response = self._call_anthropic(prompt)
+            return response
+        except Exception as e:
+            return f"⚠️ Project AI Review unavailable: {str(e)}"
+    
     async def generate_suggestion_async(
         self,
         code: str,

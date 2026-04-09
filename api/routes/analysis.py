@@ -451,15 +451,45 @@ async def analyze_uploaded_files(
     else:
         health_score = 100
     
+    project_summary_data = {
+        "total_files": len(results),
+        "total_lines": total_lines,
+        "total_issues": total_issues,
+        "health_score": round(health_score, 1),
+        "language_breakdown": lang_breakdown,
+        "processing_time": round(time.time() - start_time, 2),
+    }
+    
+    # Generate AI Project-Level Architectural Review
+    ai_project_review = None
+    if results:
+        try:
+            # Build file manifest with code content for the AI agent
+            file_manifest = []
+            for i, r in enumerate(results):
+                manifest_entry = {
+                    "file_path": r["file_path"],
+                    "language": r["language"],
+                    "lines": r["metrics"]["lines_of_code"],
+                    "issue_count": r["issue_count"],
+                    "severity_counts": r["severity_counts"],
+                    "issues": r["issues"],
+                }
+                # Attach code content from valid_files for the AI to read
+                if i < len(valid_files):
+                    manifest_entry["content"] = valid_files[i]["content"]
+                file_manifest.append(manifest_entry)
+            
+            ai_project_review = await suggestion_generator.generate_project_review_async(
+                file_manifest, project_summary_data
+            )
+        except Exception as e:
+            logger.warning(f"Project AI review generation failed: {e}")
+            ai_project_review = None
+    
     return {
-        "project_summary": {
-            "total_files": len(results),
-            "total_lines": total_lines,
-            "total_issues": total_issues,
-            "health_score": round(health_score, 1),
-            "language_breakdown": lang_breakdown,
-            "processing_time": round(time.time() - start_time, 2),
-        },
+        "project_summary": project_summary_data,
+        "ai_project_review": ai_project_review,
         "file_results": results,
         "skipped": skipped,
         "errors": errors,

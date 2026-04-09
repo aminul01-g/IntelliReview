@@ -39,7 +39,11 @@ class Settings(BaseSettings):
     ML_DEVICE: str = Field("auto", env="ML_DEVICE")
     
     # Security
-    SECRET_KEY: str = Field(..., min_length=32, env="SECRET_KEY")
+    SECRET_KEY: str = Field(
+        "default-insecure-secret-key-change-in-production-123456", 
+        min_length=32, 
+        env="SECRET_KEY"
+    )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     ALLOWED_ORIGINS: str = Field(

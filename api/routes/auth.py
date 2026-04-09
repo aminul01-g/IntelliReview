@@ -18,7 +18,22 @@ router = APIRouter()
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user."""
+    import re
+    # Check if string matches basic email structure
+    email_regex = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+    if not re.match(email_regex, user.email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid email format. Please provide a valid email address."
+        )
+        
+    # User requested strict checking for @gmail.com formatting
+    if not user.email.lower().endswith("@gmail.com"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration is currently restricted to properly formatted @gmail.com addresses."
+        )
+
     # Check if user exists
     if db.query(User).filter(User.username == user.username).first():
         raise HTTPException(

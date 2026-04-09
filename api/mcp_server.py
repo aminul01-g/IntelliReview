@@ -96,6 +96,12 @@ except ImportError:
     quality_detector = _StubAnalyzer()
 
 try:
+    from analyzer.detectors.ai_patterns import AIPatternDetector
+    ai_pattern_detector = AIPatternDetector()
+except ImportError:
+    ai_pattern_detector = _StubAnalyzer()
+
+try:
     from ml_models.generators.suggestion_generator import SuggestionGenerator
     suggestion_generator = SuggestionGenerator(provider="huggingface")
 except ImportError:
@@ -134,6 +140,10 @@ def _run_static_analysis(code: str, lang: str, filename: str) -> tuple:
     quality_issues = quality_detector.detect(code, filename, lang)
 
     all_issues = antipatterns + security_issues + quality_issues
+    
+    # AI-generated code pattern detection
+    ai_patterns = ai_pattern_detector.detect(code, filename, lang)
+    all_issues.extend(ai_patterns)
     for dup in duplicates:
         all_issues.append({
             "type": "code_duplication",

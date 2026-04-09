@@ -22,6 +22,7 @@ from analyzer.metrics.duplication import DuplicationDetector
 from analyzer.detectors.antipatterns import AntiPatternDetector
 from analyzer.detectors.security import SecurityScanner
 from analyzer.detectors.quality import QualityDetector
+from analyzer.detectors.ai_patterns import AIPatternDetector
 from ml_models.generators.suggestion_generator import SuggestionGenerator
 
 router = APIRouter()
@@ -40,6 +41,7 @@ duplication_detector = DuplicationDetector()
 antipattern_detector = AntiPatternDetector()
 security_scanner = SecurityScanner()
 quality_detector = QualityDetector()
+ai_pattern_detector = AIPatternDetector()
 suggestion_generator = SuggestionGenerator(provider="huggingface")
 
 
@@ -103,7 +105,8 @@ async def analyze_code(
         metrics_data, duplicates, antipatterns, security_issues, quality_issues = await asyncio.gather(*static_tasks)
         
         # Combine all issues
-        all_issues = antipatterns + security_issues + quality_issues
+        ai_patterns = ai_pattern_detector.detect(code, request.file_path or "unknown", request.language)
+        all_issues = antipatterns + security_issues + quality_issues + ai_patterns
         
         # Add duplication issues
         for dup in duplicates:
@@ -379,7 +382,8 @@ async def analyze_uploaded_files(
             security_issues = security_scanner.scan(code, fname, lang)
             quality_issues = quality_detector.detect(code, fname, lang)
             
-            all_issues = antipatterns + security_issues + quality_issues
+            ai_patterns = ai_pattern_detector.detect(code, fname, lang)
+            all_issues = antipatterns + security_issues + quality_issues + ai_patterns
             for dup in duplicates:
                 all_issues.append({
                     "type": "code_duplication",

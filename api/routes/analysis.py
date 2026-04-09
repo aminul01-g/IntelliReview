@@ -63,12 +63,9 @@ async def analyze_code(
             detail="File too large. Maximum supported size is 10,000 lines."
         )
     
-    # Validate language
-    if request.language not in parsers:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Language '{request.language}' not supported"
-        )
+    # Language defaults to unknown if not mapped, but we don't reject it anymore!
+    if not request.language:
+        request.language = "unknown"
     
     # Create analysis record
     code_hash = hashlib.sha256(request.code.encode()).hexdigest()
@@ -86,9 +83,9 @@ async def analyze_code(
     db.refresh(analysis)
     
     try:
-        # Parse code
-        parser = parsers[request.language]
-        ast = parser.parse(request.code, request.file_path or "temp")
+        # Parse code if we have a parser for the language
+        parser = parsers.get(request.language)
+        ast = parser.parse(request.code, request.file_path or "temp") if parser else {}
         
         # Parallelize independent detectors
         import asyncio
@@ -300,7 +297,7 @@ SKIP_PATTERNS = {
 
 @router.post("/upload")
 async def analyze_uploaded_files(
-    files: List[UploadFile] = File(...),
+    files: List[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -313,6 +310,12 @@ async def analyze_uploaded_files(
     skipped = []
     errors = []
     
+    # Aggressively ignore common large binary or non-code directories
+    COMMON_IGNORES = [
+        "node_modules", ".git", ".venv", "venv", "__pycache__", "build", "dist",
+        ".next", ".nuxt", "coverage", "vendor"
+    ]
+    
     # Filter and process files
     valid_files = []
     for f in files:
@@ -320,15 +323,17 @@ async def analyze_uploaded_files(
         
         # Skip binary/non-code files and ignored directories
         path_parts = filename.replace("\\", "/").split("/")
-        if any(part in SKIP_PATTERNS for part in path_parts):
-            skipped.append({"file": filename, "reason": "Ignored directory/file"})
+        if any(part.startswith(".") for part in path_parts if part != ".") or any(part in COMMON_IGNORES for part in path_parts) or any(part in SKIP_PATTERNS for part in path_parts):
+            skipped.append({"file": filename, "reason": "Ignored folder or dotfile"})
             continue
         
         ext = os.path.splitext(filename)[1].lower()
-        lang = EXT_LANG_MAP.get(ext)
-        if not lang:
-            skipped.append({"file": filename, "reason": f"Unsupported extension: {ext}"})
+        # Binary file extensions to skip aggressively
+        if ext in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mp3", ".wav", ".zip", ".tar", ".gz", ".rar", ".pdf", ".exe", ".dll", ".so", ".dylib", ".class", ".pyc"]:
+            skipped.append({"file": filename, "reason": f"Binary/Unsupported extension: {ext}"})
             continue
+
+        lang = EXT_LANG_MAP.get(ext, "unknown")
         
         # Read file content
         try:
@@ -367,13 +372,9 @@ async def analyze_uploaded_files(
             lang = file_info["language"]
             fname = file_info["filename"]
             
-            # Parse
+            # Parse (fallback to empty dict if no AST parser exists for language)
             parser = parsers.get(lang)
-            if not parser:
-                errors.append({"file": fname, "error": f"No parser for {lang}"})
-                continue
-            
-            ast = parser.parse(code, fname)
+            ast = parser.parse(code, fname) if parser else {}
             
             # Run static analysis
             metrics_data = complexity_analyzer.analyze(code, lang)

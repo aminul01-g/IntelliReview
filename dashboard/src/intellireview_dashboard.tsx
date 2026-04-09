@@ -223,9 +223,32 @@ const api = {
 
   uploadFiles: async (files: FileList): Promise<ProjectUploadResult> => {
     const formData = new FormData();
+    const commonIgnores = ['node_modules', '.git', '.venv', 'venv', '__pycache__', 'build', 'dist', '.next', 'coverage'];
+    const binaryExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp4', '.mp3', '.zip', '.tar', '.gz', '.pdf', '.exe', '.dll', '.so'];
+    
+    let addedCount = 0;
     for (let i = 0; i < files.length; i++) {
-      formData.append('files', files[i]);
+        const file = files[i];
+        const path = file.webkitRelativePath || file.name;
+        
+        // Skip ignored directories
+        if (commonIgnores.some(ignore => path.includes(`/${ignore}/`) || path.startsWith(`${ignore}/`))) continue;
+        
+        // Skip binary extensions
+        if (binaryExts.some(ext => path.toLowerCase().endsWith(ext))) continue;
+        
+        // Cap at 100 files to prevent server payload rejection (HTTP 413 / 400)
+        if (addedCount >= 100) break;
+        
+        formData.append('files', file);
+        addedCount++;
     }
+    
+    // If no valid files remain after filtering
+    if (addedCount === 0) {
+        throw new Error("No valid code files found in selection. Ensure you are not uploading ignored folders (node_modules, etc).");
+    }
+
     const response = await fetch(`${API_BASE_URL}/analysis/upload`, {
       method: 'POST',
       body: formData,

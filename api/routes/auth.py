@@ -73,14 +73,14 @@ async def login(
         expires_delta=access_token_expires
     )
     
-    # Set secure HttpOnly cookie
+    # Set secure HttpOnly cookie with SameSite=None for Hugging Face iframe embedding
     response.set_cookie(
         key="auth_token",
         value=access_token,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         httponly=True,
-        secure=not settings.DEBUG,  # True in production
-        samesite="lax",
+        secure=True,  # Must be true when SameSite=None
+        samesite="none",
         domain=settings.COOKIE_DOMAIN
     )
     

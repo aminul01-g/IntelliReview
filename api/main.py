@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, FileResponse
+import os
 from contextlib import asynccontextmanager
 import uvicorn
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -58,21 +60,42 @@ app.include_router(metrics.router, prefix=f"{settings.API_PREFIX}/metrics", tags
 app.include_router(feedback.router, prefix=f"{settings.API_PREFIX}/feedback", tags=["Feedback"])
 app.include_router(webhooks.router, prefix=f"{settings.API_PREFIX}/webhooks", tags=["Webhooks"])
 
-@app.get("/")
-@limiter.limit("60/minute")
-async def root(request: Request):
-    """Root endpoint."""
-    return {
-        "name": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "status": "running"
-    }
-
 @app.get("/health")
 @limiter.limit("60/minute")
 async def health_check(request: Request):
     """Health check endpoint."""
     return {"status": "healthy"}
+
+# Serve Frontend SPA
+if os.path.exists("dashboard/dist"):
+    # Mount Vite's generated assets directory caching
+    app.mount("/assets", StaticFiles(directory="dashboard/dist/assets"), name="assets")
+
+    # Catch-all route to support React Router SPA behavior
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Ignore actual API paths
+        if full_path.startswith("api/v1/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
+            raise HTTPException(status_code=404, detail="Not Found")
+            
+        # Serve exact file if it exists (e.g. /favicon.ico, /vite.svg)
+        file_path = os.path.join("dashboard/dist", full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+            
+        # Fallback to SPA entrypoint
+        return FileResponse("dashboard/dist/index.html")
+else:
+    @app.get("/")
+    @limiter.limit("60/minute")
+    async def root(request: Request):
+        """API Root endpoint for when the frontend is unbuilt."""
+        return {
+            "name": settings.APP_NAME,
+            "version": settings.APP_VERSION,
+            "status": "running",
+            "message": "Frontend not built. To view the UI, build the frontend first."
+        }
 
 if __name__ == "__main__":
     uvicorn.run(

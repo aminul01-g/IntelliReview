@@ -10,10 +10,11 @@ class Settings(BaseSettings):
     
     # API
     API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8000
+    API_PORT: int = Field(7860, env="PORT")
     API_PREFIX: str = "/api/v1"
     
     # Database
+    DATABASE_URL: Optional[str] = Field(None, env="DATABASE_URL")
     POSTGRES_USER: str = "intellireview"
     POSTGRES_PASSWORD: str = "password"
     POSTGRES_HOST: str = "localhost"
@@ -63,6 +64,11 @@ class Settings(BaseSettings):
     
     @property
     def database_url(self) -> str:
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
+        if self.POSTGRES_HOST == "localhost" and self.POSTGRES_PASSWORD == "password":
+            # Fallback to SQLite when no explicit DB config is set (e.g., Hugging Face Spaces)
+            return "sqlite:///./sqlite.db"
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
     
     @validator("ALLOWED_ORIGINS")

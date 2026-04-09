@@ -4,11 +4,18 @@ from sqlalchemy.orm import sessionmaker
 from config.settings import settings
 
 try:
-    engine = create_engine(
-        settings.database_url,
-        pool_pre_ping=True,
-        echo=settings.DEBUG
-    )
+    if settings.database_url.startswith("sqlite"):
+        engine = create_engine(
+            settings.database_url,
+            connect_args={"check_same_thread": False},
+            echo=settings.DEBUG
+        )
+    else:
+        engine = create_engine(
+            settings.database_url,
+            pool_pre_ping=True,
+            echo=settings.DEBUG
+        )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 except Exception as e:
     print(f"Warning: Could not create database engine: {e}")

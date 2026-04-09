@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 // Mock definitions for Vite and plugins to satisfy IDE without npm install
 
 declare module 'vite' {

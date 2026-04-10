@@ -91,6 +91,14 @@ interface FileResult {
   severity_counts: Record<string, number>;
   issues: Issue[];
   status: string;
+  related_files?: string[];
+}
+
+interface AutoFix {
+  filename: string;
+  diff: string;
+  issues_addressed: number;
+  status: string;
 }
 
 interface ProjectUploadResult {
@@ -103,6 +111,7 @@ interface ProjectUploadResult {
     processing_time: number;
   };
   ai_project_review?: string;
+  auto_fixes?: AutoFix[];
   file_results: FileResult[];
   skipped: { file: string; reason: string }[];
   errors: { file: string; error: string }[];
@@ -1220,7 +1229,24 @@ const ProjectUploadView: React.FC = () => {
           {/* Expanded File Detail */}
           {selectedFileResult && (
             <div className="bg-white rounded-xl shadow-lg border-2 border-indigo-200 p-6">
-              <h4 className="text-lg font-bold text-gray-800 mb-4 font-mono">{selectedFileResult.file_path}</h4>
+              <h4 className="text-lg font-bold text-gray-800 mb-2 font-mono">{selectedFileResult.file_path}</h4>
+              
+              {selectedFileResult.related_files && selectedFileResult.related_files.length > 0 && (
+                <div className="mb-4 bg-indigo-50/50 p-3 rounded-lg border border-indigo-100 flex items-start gap-2">
+                  <TrendingUp className="w-4 h-4 text-indigo-500 mt-0.5" />
+                  <div>
+                    <h5 className="text-xs font-bold text-indigo-800 mb-1 uppercase tracking-wider">RAG Dependency Map</h5>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                       {selectedFileResult.related_files.map((rel, ri) => (
+                         <span key={ri} className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-mono border border-indigo-200">
+                           {rel}
+                         </span>
+                       ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {selectedFileResult.issues.length > 0 ? (
                 <div className="space-y-3">
                   {selectedFileResult.issues.map((issue, idx) => (
@@ -1242,6 +1268,42 @@ const ProjectUploadView: React.FC = () => {
               ) : (
                 <p className="text-center text-gray-500 py-4">No issues found in this file. ✅</p>
               )}
+            </div>
+          )}
+
+          {/* AI Auto-Fixes */}
+          {result.auto_fixes && result.auto_fixes.length > 0 && (
+            <div className="bg-white rounded-xl shadow-lg border-2 border-green-200 overflow-hidden">
+              <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4">
+                <div className="flex items-center space-x-3">
+                  <div className="bg-white/20 p-2 rounded-lg backdrop-blur-sm">
+                     <Code className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">AI Auto-Fixes Generated</h3>
+                    <p className="text-green-100 text-xs font-medium">Auto-remediation created ready-to-test diff patches for critical vulnerabilities.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 space-y-6">
+                {result.auto_fixes.map((fix, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                      <span className="font-mono text-sm font-bold text-gray-700">{fix.filename}</span>
+                      <span className="text-xs font-bold bg-green-100 text-green-800 px-2 py-0.5 rounded-full border border-green-200 shadow-sm">
+                        Fixed {fix.issues_addressed} issues
+                      </span>
+                    </div>
+                    <div className="bg-slate-900 p-4 overflow-x-auto text-sm text-gray-300 font-mono">
+                      {fix.diff.split('\n').map((line, i) => (
+                        <div key={i} className={`whitespace-pre ${line.startsWith('+') ? 'text-green-400 bg-green-900/30 w-full px-1' : line.startsWith('-') ? 'text-red-400 bg-red-900/30 w-full px-1' : 'px-1'}`}>
+                          {line || ' '}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

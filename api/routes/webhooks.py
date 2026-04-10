@@ -19,6 +19,7 @@ from analyzer.detectors.antipatterns import AntiPatternDetector
 from analyzer.detectors.security import SecurityScanner
 from analyzer.detectors.quality import QualityDetector
 from ml_models.generators.suggestion_generator import SuggestionGenerator
+from analyzer.context.project_context import ProjectContextBuilder
 
 router = APIRouter()
 
@@ -39,6 +40,7 @@ antipattern_detector = AntiPatternDetector()
 security_scanner = SecurityScanner()
 quality_detector = QualityDetector()
 suggestion_generator = SuggestionGenerator(provider="huggingface")
+project_context_builder = ProjectContextBuilder()
 
 
 async def analyze_pr_async(repo_full_name: str, pr_number: int):
@@ -55,10 +57,11 @@ async def analyze_pr_async(repo_full_name: str, pr_number: int):
         
         results = []
         file_manifest = []
+        valid_files = []
         total_lines = 0
         total_issues = 0
         
-        # Analyze changed files
+        # 1. Gather all valid PR files
         for f in files:
             # Skip deletions
             if f.status == "removed":
@@ -88,6 +91,27 @@ async def analyze_pr_async(repo_full_name: str, pr_number: int):
             if line_count == 0 or line_count > 5000:
                 continue
                 
+            valid_files.append({
+                "filename": filename,
+                "content": code,
+                "language": lang,
+                "lines": line_count
+            })
+            
+        # 2. Build RAG Project Context
+        if valid_files:
+            try:
+                project_context_builder.index_project(valid_files)
+            except Exception as e:
+                print(f"RAG Indexing failed in PR webhook: {e}")
+                
+        # 3. Analyze each file
+        for file_idx, f_data in enumerate(valid_files):
+            filename = f_data["filename"]
+            code = f_data["content"]
+            lang = f_data["language"]
+            line_count = f_data["lines"]
+            
             parser = parsers.get(lang)
             if not parser:
                 continue
@@ -112,13 +136,20 @@ async def analyze_pr_async(repo_full_name: str, pr_number: int):
                 total_lines += metrics_data.get("lines_of_code", line_count)
                 
                 if issues_count > 0:
+                    related_files = []
+                    try:
+                        related_files = [r["filename"] for r in project_context_builder.get_related_files(file_idx, top_k=3)]
+                    except Exception:
+                        pass
+                        
                     results.append({
                         "file_path": filename,
                         "language": lang,
                         "metrics": metrics_data,
                         "issue_count": issues_count,
                         "severity_counts": severity_counts,
-                        "issues": all_issues
+                        "issues": all_issues,
+                        "related_files": related_files
                     })
                     
                     manifest_entry = {
@@ -128,6 +159,7 @@ async def analyze_pr_async(repo_full_name: str, pr_number: int):
                         "issue_count": issues_count,
                         "severity_counts": severity_counts,
                         "issues": all_issues,
+                        "related_files": related_files,
                         "content": code[:800] # for the AI
                     }
                     file_manifest.append(manifest_entry)
@@ -157,11 +189,42 @@ async def analyze_pr_async(repo_full_name: str, pr_number: int):
         # Get AI Project-Level architectural review
         ai_review = await suggestion_generator.generate_project_review_async(file_manifest, project_summary_data)
         
+        # Build AI Auto-fixes for Critical Issues
+        auto_fixes = []
+        try:
+            fix_tasks = []
+            for i, r in enumerate(results):
+                critical_count = r["severity_counts"].get("critical", 0) + r["severity_counts"].get("high", 0)
+                if critical_count > 0:
+                    code_to_fix = next((vf["content"] for vf in valid_files if vf["filename"] == r["file_path"]), "")
+                    if code_to_fix:
+                        fix_tasks.append(
+                            suggestion_generator.generate_auto_fix_async(
+                                code=code_to_fix,
+                                issues=r["issues"],
+                                language=r["language"],
+                                filename=r["file_path"]
+                            )
+                        )
+            if fix_tasks:
+                auto_fixes = await asyncio.gather(*fix_tasks)
+                auto_fixes = [f for f in auto_fixes if f.get("diff")]
+        except Exception as e:
+            print(f"Auto-fix generation failed: {e}")
+        
         comment_body = f"🚀 **IntelliReview PR Audit**\n\n"
         comment_body += f"> Analyzed {len(results)} files. Overall Health Delta: **{round(health_score,1)}%**\n\n"
         
         comment_body += "<details open>\n<summary><b>🤖 AI Architectural Review</b></summary>\n\n"
         comment_body += f"{ai_review}\n\n</details>\n\n"
+        
+        if auto_fixes:
+            comment_body += "## 🛠️ Recommended AI Auto-Fixes\n"
+            comment_body += "> You can apply these patches locally to instantly resolve the identified vulnerabilities.\n\n"
+            for fix in auto_fixes:
+                comment_body += f"<details open>\n<summary><b>Apply patch for `{fix.get('filename')}`</b></summary>\n\n"
+                comment_body += f"```diff\n{fix.get('diff')}\n```\n\n"
+                comment_body += "</details>\n\n"
         
         comment_body += "<details>\n<summary><b>📄 Specific Issues</b></summary>\n\n"
         for r in results:

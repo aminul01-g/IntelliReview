@@ -1,3 +1,13 @@
+---
+title: IntelliReview
+emoji: 🛡️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 # IntelliReview - AI-Powered Code Review Assistant
 
 <div align="center">

@@ -23,6 +23,7 @@ from analyzer.detectors.antipatterns import AntiPatternDetector
 from analyzer.detectors.security import SecurityScanner
 from analyzer.detectors.quality import QualityDetector
 from analyzer.detectors.ai_patterns import AIPatternDetector
+from analyzer.context.project_context import ProjectContextBuilder
 from ml_models.generators.suggestion_generator import SuggestionGenerator
 
 router = APIRouter()
@@ -42,6 +43,7 @@ antipattern_detector = AntiPatternDetector()
 security_scanner = SecurityScanner()
 quality_detector = QualityDetector()
 ai_pattern_detector = AIPatternDetector()
+project_context_builder = ProjectContextBuilder()
 suggestion_generator = SuggestionGenerator(provider="huggingface")
 
 
@@ -372,6 +374,13 @@ async def analyze_uploaded_files(
             "errors": errors,
         }
     
+    # === RAG CONTEXT: Index all project files for cross-file awareness ===
+    try:
+        project_context_builder.index_project(valid_files)
+        logger.info(f"RAG context indexed {len(valid_files)} files for cross-file analysis")
+    except Exception as e:
+        logger.warning(f"RAG context indexing failed (continuing without context): {e}")
+    
     # Analyze each file
     for file_info in valid_files:
         try:
@@ -391,6 +400,16 @@ async def analyze_uploaded_files(
             quality_issues = quality_detector.detect(code, fname, lang)
             
             ai_patterns = ai_pattern_detector.detect(code, fname, lang)
+            
+            # === RAG CONTEXT: Build cross-file context for this specific file ===
+            file_idx = next((i for i, f in enumerate(valid_files) if f["filename"] == fname), None)
+            cross_file_context = None
+            if file_idx is not None:
+                try:
+                    cross_file_context = project_context_builder.build_context_string(file_idx, top_k=3)
+                except Exception:
+                    pass
+            
             all_issues = antipatterns + security_issues + quality_issues + ai_patterns
             for dup in duplicates:
                 all_issues.append({
@@ -439,6 +458,7 @@ async def analyze_uploaded_files(
                 "issue_count": len(all_issues),
                 "severity_counts": severity_counts,
                 "issues": all_issues[:10],  # Return top 10 issues per file to avoid huge payloads
+                "related_files": [r["filename"] for r in (project_context_builder.get_related_files(file_idx, top_k=3) if file_idx is not None else [])],
                 "status": "completed"
             })
         
@@ -486,6 +506,7 @@ async def analyze_uploaded_files(
                     "issue_count": r["issue_count"],
                     "severity_counts": r["severity_counts"],
                     "issues": r["issues"],
+                    "related_files": r.get("related_files", []),
                 }
                 # Attach code content from valid_files for the AI to read
                 if i < len(valid_files):
@@ -499,9 +520,32 @@ async def analyze_uploaded_files(
             logger.warning(f"Project AI review generation failed: {e}")
             ai_project_review = None
     
+    # === AUTO-FIX: Generate unified diff patches for files with critical/high issues ===
+    auto_fixes = []
+    try:
+        import asyncio as _asyncio
+        fix_tasks = []
+        for i, r in enumerate(results):
+            critical_count = r["severity_counts"].get("critical", 0) + r["severity_counts"].get("high", 0)
+            if critical_count > 0 and i < len(valid_files):
+                fix_tasks.append(
+                    suggestion_generator.generate_auto_fix_async(
+                        code=valid_files[i]["content"],
+                        issues=r["issues"],
+                        language=r["language"],
+                        filename=r["file_path"]
+                    )
+                )
+        if fix_tasks:
+            auto_fixes = await _asyncio.gather(*fix_tasks)
+            auto_fixes = [f for f in auto_fixes if f.get("diff")]
+    except Exception as e:
+        logger.warning(f"Auto-fix generation failed: {e}")
+    
     return {
         "project_summary": project_summary_data,
         "ai_project_review": ai_project_review,
+        "auto_fixes": auto_fixes,
         "file_results": results,
         "skipped": skipped,
         "errors": errors,

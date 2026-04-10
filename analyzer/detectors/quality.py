@@ -102,8 +102,7 @@ class QualityDetector:
             pylint_args = [
                 temp_path,
                 '--disable=all',
-                '--enable=E,W',
-                '--disable=import-error,missing-docstring,unused-import,invalid-name,empty-docstring,C0114,C0115,C0116', 
+                '--enable=E,F',
                 '--reports=n',
                 '--score=n',
                 '--jobs=4'

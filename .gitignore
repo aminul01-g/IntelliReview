@@ -55,4 +55,5 @@ yarn-error.log*
 
 # OS
 .DS_Store
-Thumbs.db
+Thumbs.dbscratch/fastapi_test.py
+strategic_roadmap.md

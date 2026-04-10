@@ -185,7 +185,13 @@ Provide a concise response in this EXACT format (no extra sections):
 Keep your entire response under 150 words. Do NOT repeat the full file. Only show the affected line(s)."""
 
         if context:
-            prompt += f"\nAdditional Context:\n{context}\n"
+            prompt += f"""\n\n--- CROSS-FILE PROJECT CONTEXT ---
+The following related files exist in the same project. Use them to understand
+how this file connects to the broader codebase and catch cross-file issues
+(e.g., mismatched function signatures, broken imports, schema drift):
+
+{context}
+--- END CONTEXT ---"""
         
         return prompt
     
@@ -288,8 +294,18 @@ Keep the entire review concise and professional (under 600 words)."""
         for f in file_manifest[:5]:
             if f.get('content'):
                 snippet = f['content'][:800]
-                code_snippets.append(f"### {f['file_path']}\n```{f['language']}\n{snippet}\n```")
+                related = f.get('related_files', [])
+                related_str = f"  Related to: {', '.join(related)}" if related else ""
+                code_snippets.append(f"### {f['file_path']}{related_str}\n```{f['language']}\n{snippet}\n```")
         code_section = "\n\n".join(code_snippets) if code_snippets else "Code snippets not available."
+        
+        # Build a cross-file dependency map
+        dep_lines = []
+        for f in file_manifest:
+            related = f.get('related_files', [])
+            if related:
+                dep_lines.append(f"  {f['file_path']} ↔ {', '.join(related)}")
+        dep_section = "\n".join(dep_lines) if dep_lines else "  No cross-file dependencies detected."
         
         prompt = f"""You are a Principal Software Architect conducting a comprehensive project audit.
 
@@ -308,6 +324,9 @@ Keep the entire review concise and professional (under 600 words)."""
 
 ## Key Source Code
 {code_section}
+
+## Cross-File Dependency Map
+{dep_section}
 
 ---
 
@@ -408,6 +427,71 @@ Keep the entire review under 800 words. Be specific, cite file names and line nu
                 "confidence": 0.0,
                 "issue_type": issue.get('type'),
                 "severity": issue.get('severity')
+            }
+
+    async def generate_auto_fix_async(
+        self,
+        code: str,
+        issues: List[Dict],
+        language: str = "python",
+        filename: str = "file"
+    ) -> Dict:
+        """Generate a unified diff patch that auto-fixes the top issues in the code."""
+        
+        # Summarize top issues for the prompt
+        issue_lines = []
+        for i, issue in enumerate(issues[:5], 1):
+            issue_lines.append(
+                f"  {i}. Line {issue.get('line', '?')}: [{issue.get('severity', 'medium')}] "
+                f"{issue.get('type', '?')} — {issue.get('message', '')}"
+            )
+        issue_summary = "\n".join(issue_lines) if issue_lines else "  No issues."
+        
+        prompt = f"""You are an expert software engineer. Fix the following issues in this {language} code.
+
+File: {filename}
+Issues to fix:
+{issue_summary}
+
+Original code:
+```{language}
+{code}
+```
+
+Respond with ONLY a unified diff patch in this exact format (no explanation, no markdown fences around the diff):
+
+--- a/{filename}
++++ b/{filename}
+@@ -LINE,COUNT +LINE,COUNT @@
+-old line
++new fixed line
+
+Rules:
+- Fix ONLY the listed issues. Do not refactor unrelated code.
+- Keep the diff minimal — change only the lines that need fixing.
+- If an issue cannot be auto-fixed safely, skip it.
+- Output ONLY the diff, nothing else."""
+        
+        try:
+            if self.provider == "huggingface":
+                response = await self._call_huggingface_async_long(prompt)
+            elif self.provider == "openai":
+                response = self._call_openai(prompt)
+            else:
+                response = self._call_anthropic(prompt)
+            
+            return {
+                "filename": filename,
+                "diff": response.strip(),
+                "issues_addressed": len(issues[:5]),
+                "status": "generated"
+            }
+        except Exception as e:
+            return {
+                "filename": filename,
+                "diff": None,
+                "issues_addressed": 0,
+                "status": f"failed: {str(e)}"
             }
 
     def _call_huggingface(self, prompt: str) -> str:

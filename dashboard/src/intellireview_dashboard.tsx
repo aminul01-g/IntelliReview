@@ -1031,7 +1031,7 @@ const ProjectUploadView: React.FC = () => {
           <Upload className="w-6 h-6 mr-2 text-indigo-500" />
           Upload Project
         </h2>
-        <p className="text-sm text-gray-500 mb-6">Upload files or entire folders for batch analysis. Supports Python, JavaScript, Java, C, and C++.</p>
+        <p className="text-sm text-gray-500 mb-6">Upload files or entire folders for batch analysis. We natively support all universal programming languages!</p>
 
         <div
           onDrop={handleDrop}

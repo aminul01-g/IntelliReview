@@ -1,14 +1,32 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 import json
+import os
+import logging
 from collections import defaultdict
 
+try:
+    from huggingface_hub import InferenceClient
+except ImportError:
+    InferenceClient = None
+
+logger = logging.getLogger(__name__)
+
 class PatternLearner:
-    """Learn from user feedback to improve suggestions."""
+    """Learn from user feedback to improve suggestions using LLMs."""
     
-    def __init__(self, storage_path: str = "./learned_patterns.json"):
+    def __init__(self, storage_path: str = "./learned_patterns.json", model_name: str = "Qwen/Qwen3-32B", api_key: str = None):
         """Initialize pattern learner."""
         self.storage_path = storage_path
         self.patterns = self._load_patterns()
+        
+        self.model_name = os.getenv('HUGGINGFACE_PATTERN_MODEL', model_name)
+        self.api_key = api_key or os.getenv('HUGGINGFACE_API_KEY')
+        
+        if not InferenceClient:
+            logger.warning("huggingface_hub not installed. Advanced pattern learning will fail.")
+            self.client = None
+        else:
+            self.client = InferenceClient(token=self.api_key)
     
     def record_feedback(
         self,
@@ -76,6 +94,35 @@ class PatternLearner:
                 }
         
         return stats
+        
+    def analyze_patterns(self) -> str:
+        """Use the Qwen LLM to analyze the JSON feedback and deduce coding rules."""
+        if not self.client:
+            return "LLM Inference Client not available."
+            
+        stats = self.get_statistics()
+        if not stats:
+            return "Not enough telemetry data to deduce patterns."
+            
+        prompt = f"""You are an elite Staff Software Engineer analyzing team telemetry data.
+Here is a JSON mapping of AI code review suggestions and their acceptance/rejection rates:
+{json.dumps(stats, indent=2)}
+
+Based on these rates, what coding patterns and project specific rules can you deduce that we should enforce?
+If a suggestion type has a high rejection rate, advise on how our AI should stop suggesting it.
+
+Output a concise Markdown list of deduced rules."""
+        
+        try:
+            return self.client.text_generation(
+                prompt,
+                model=self.model_name,
+                max_new_tokens=400,
+                temperature=0.2
+            )
+        except Exception as e:
+            logger.error(f"Failed to infer patterns via LLM: {e}")
+            return f"Error inferring patterns: {str(e)}"
     
     def _load_patterns(self) -> Dict:
         """Load patterns from storage."""

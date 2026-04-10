@@ -33,7 +33,7 @@ class SuggestionGenerator:
             if not InferenceClient:
                 raise ImportError("huggingface_hub is required for Hugging Face provider")
             self.api_key = api_key or os.getenv('HUGGINGFACE_API_KEY')
-            self.model = model or os.getenv('HUGGINGFACE_MODEL', "Qwen/Qwen2.5-Coder-7B-Instruct")
+            self.model = model or os.getenv('HUGGINGFACE_MODEL', "deepseek-ai/DeepSeek-R1")
             self.client = InferenceClient(token=self.api_key)
             
         elif provider == "openai":

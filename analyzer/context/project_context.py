@@ -1,15 +1,24 @@
 """
-Lightweight in-memory RAG (Retrieval-Augmented Generation) context builder.
+LLM-based Context Analyzer.
 
-Instead of depending on heavy ChromaDB + SentenceTransformers (which add ~2GB to Docker),
-this module uses a fast TF-IDF cosine similarity approach to find related files within
-an uploaded project. This gives the LLM cross-file awareness without external dependencies.
+Uses a large language model (e.g., Qwen/Qwen3-32B) to dynamically deduce
+conceptual relationships and data flow dependencies between project files.
 """
 
-import re
 import math
+import os
+import json
+import logging
+import re
 from typing import List, Dict, Optional
 from collections import Counter
+
+try:
+    from huggingface_hub import InferenceClient
+except ImportError:
+    InferenceClient = None
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectContextBuilder:
@@ -23,80 +32,98 @@ class ProjectContextBuilder:
     evaluating each file in isolation.
     """
     
-    def __init__(self):
+    def __init__(self, model_name: str = "Qwen/Qwen3-32B", api_key: str = None):
         self._file_index: List[Dict] = []
-        self._tfidf_vectors: List[Dict[str, float]] = []
-        self._idf_cache: Dict[str, float] = {}
+        self._related_map_cache: Dict[str, List[str]] = {}
+        
+        self.model_name = os.getenv('HUGGINGFACE_CONTEXT_MODEL', model_name)
+        self.api_key = api_key or os.getenv('HUGGINGFACE_API_KEY')
+        
+        if not InferenceClient:
+            logger.warning("huggingface_hub not installed. Context logic will fail.")
+            self.client = None
+        else:
+            self.client = InferenceClient(token=self.api_key)
     
     def index_project(self, files: List[Dict]) -> None:
         """
-        Index all files in the uploaded project for similarity search.
+        Cache the files in memory for context LLM mapping.
         
         Args:
             files: List of dicts with keys: 'filename', 'content', 'language'
         """
         self._file_index = files
-        
-        # Step 1: Tokenize each file into a bag of meaningful code tokens
-        doc_tokens = []
-        for f in files:
-            tokens = self._extract_tokens(f["content"], f.get("filename", ""))
-            doc_tokens.append(tokens)
-        
-        # Step 2: Compute IDF (Inverse Document Frequency) across the project
-        num_docs = len(files)
-        all_terms = set()
-        for tokens in doc_tokens:
-            all_terms.update(tokens.keys())
-        
-        self._idf_cache = {}
-        for term in all_terms:
-            doc_count = sum(1 for tokens in doc_tokens if term in tokens)
-            self._idf_cache[term] = math.log((num_docs + 1) / (doc_count + 1)) + 1
-        
-        # Step 3: Compute TF-IDF vector for each file
-        self._tfidf_vectors = []
-        for tokens in doc_tokens:
-            total = sum(tokens.values()) or 1
-            vec = {}
-            for term, count in tokens.items():
-                tf = count / total
-                vec[term] = tf * self._idf_cache.get(term, 1.0)
-            self._tfidf_vectors.append(vec)
+        self._related_map_cache = {}
     
     def get_related_files(self, file_index: int, top_k: int = 5) -> List[Dict]:
         """
-        Find the top-k most related files to the file at the given index.
-        
-        Returns a list of dicts with 'filename', 'similarity', and 'content' (truncated).
+        Use the LLM to deduce the top-k conceptually related files.
         """
-        if not self._tfidf_vectors or file_index >= len(self._tfidf_vectors):
+        if not self.client or file_index >= len(self._file_index):
             return []
+            
+        target_file = self._file_index[file_index]
+        target_name = target_file["filename"]
         
-        query_vec = self._tfidf_vectors[file_index]
-        similarities = []
+        # Return cached maps to avoid duplicate heavy LLM calls
+        if target_name in self._related_map_cache:
+            related_names = self._related_map_cache[target_name]
+            return [f for f in self._file_index if f["filename"] in related_names][:top_k]
         
-        for i, vec in enumerate(self._tfidf_vectors):
-            if i == file_index:
-                continue
-            sim = self._cosine_similarity(query_vec, vec)
-            if sim > 0.05:  # Minimum relevance threshold
-                similarities.append((i, sim))
-        
-        # Sort by similarity descending
-        similarities.sort(key=lambda x: x[1], reverse=True)
-        
-        results = []
-        for idx, sim in similarities[:top_k]:
-            f = self._file_index[idx]
-            results.append({
-                "filename": f["filename"],
-                "similarity": round(sim, 3),
-                "language": f.get("language", "unknown"),
-                "content_preview": f["content"][:600],  # First 600 chars as context
-            })
-        
-        return results
+        # Extract small representation of other files to save context limit
+        other_files = []
+        for i, f in enumerate(self._file_index):
+            if i != file_index:
+                other_files.append(f"- {f['filename']} ({f.get('language', 'unknown')})")
+                
+        if not other_files:
+            return []
+
+        prompt = f"""You are an elite Software Architect. We are analyzing target file: {target_name}.
+Here is a snippet of its core logic:
+```
+{target_file['content'][:500]}
+```
+
+Here are the other files in the project workspace:
+{chr(10).join(other_files)}
+
+Deduce the top {top_k} files in the workspace that are highly dependent, conceptually linked, or imported by this target file.
+Return ONLY a JSON array of strings matching the exact filenames. Return [] if none are related."""
+
+        try:
+            response = self.client.text_generation(
+                prompt,
+                model=self.model_name,
+                max_new_tokens=150,
+                temperature=0.1
+            )
+            
+            response = response.strip()
+            if response.startswith("```json"): response = response[7:]
+            if response.startswith("```"): response = response[3:]
+            if response.endswith("```"): response = response[:-3]
+            response = response.strip()
+            
+            related_names = json.loads(response)
+            if isinstance(related_names, list):
+                self._related_map_cache[target_name] = related_names
+                results = []
+                for fname in related_names[:top_k]:
+                    matched = next((x for x in self._file_index if x["filename"] == fname), None)
+                    if matched:
+                        results.append({
+                            "filename": matched["filename"],
+                            "similarity": 0.9, # Inferred High Priority
+                            "language": matched.get("language", "unknown"),
+                            "content_preview": matched["content"][:600]
+                        })
+                return results
+                
+        except Exception as e:
+            logger.warning(f"LLM Context Generator failed for {target_name}: {e}")
+            
+        return []
     
     def build_context_string(self, file_index: int, top_k: int = 3) -> Optional[str]:
         """

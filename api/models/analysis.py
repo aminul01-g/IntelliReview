@@ -8,7 +8,8 @@ class Analysis(Base):
     __tablename__ = "analyses"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
     file_path = Column(String(500), nullable=False)
     language = Column(String(50), nullable=False)
     code_hash = Column(String(64), index=True)
@@ -21,4 +22,4 @@ class Analysis(Base):
     
     # Relationships
     user = relationship("User", backref="analyses")
-
+    project = relationship("Project", backref="analyses")

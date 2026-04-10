@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 from api.database import get_db
 from api.models.user import User
 from api.models.analysis import Analysis
+from api.models.project import Project
 from api.schemas.analysis import AnalysisRequest, AnalysisResponse, Issue, Metrics
 from api.auth import get_current_user
 from analyzer.parsers.python_parser import PythonParser
@@ -250,6 +251,25 @@ async def get_analysis_history(
             
     return results
 
+@router.get("/projects")
+async def get_projects_history(
+    limit: int = 10,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get persistent smart-tabs of uploaded projects."""
+    projects = db.query(Project).filter(
+        Project.user_id == current_user.id
+    ).order_by(Project.created_at.desc()).limit(limit).all()
+    
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "plan_md": p.plan_md,
+            "created_at": p.created_at
+        } for p in projects
+    ]
 
 @router.get("/history/{analysis_id}", response_model=AnalysisResponse)
 async def get_analysis_result(
@@ -373,6 +393,53 @@ async def analyze_uploaded_files(
             "skipped": skipped,
             "errors": errors,
         }
+        
+    # === PLAN-FIRST PROTOCOL: Phase 1 & 2 ===
+    project_name = "Uploaded Project"
+    config_contents = ""
+    dir_tree_list = []
+    
+    for f in valid_files:
+        fname = f["filename"]
+        dir_tree_list.append(fname)
+        
+        if "/" in fname and project_name == "Uploaded Project":
+            project_name = fname.split("/")[0]
+            
+        base = os.path.basename(fname).lower()
+        if base in ["package.json", "requirements.txt", "readme.md", "setup.py", "pom.xml", "dockerfile"]:
+            config_contents += f"\n--- {base} ---\n{f['content'][:1500]}\n"
+            
+    dir_tree_str = "\n".join(dir_tree_list)
+    
+    # 2. Strategic Planning via SuggestionGenerator
+    plan_md = None
+    try:
+        plan_md = await suggestion_generator.generate_project_plan_async(
+            config_files_content=config_contents,
+            directory_tree=dir_tree_str
+        )
+    except Exception as e:
+        logger.error(f"Plan generation failed: {e}")
+        plan_md = f"# IntelliReview Plan\nError generating plan: {e}"
+        
+    # 3. Create persistent Project Entity in DB
+    project_record = None
+    try:
+        import hashlib
+        folder_hash = hashlib.sha256(("".join(dir_tree_list)).encode()).hexdigest()
+        project_record = Project(
+            user_id=current_user.id,
+            name=project_name,
+            folder_hash=folder_hash,
+            plan_md=plan_md
+        )
+        db.add(project_record)
+        db.commit()
+        db.refresh(project_record)
+    except Exception as e:
+        logger.error(f"Failed to create project record: {e}")
+        db.rollback()
     
     # === RAG CONTEXT: Index all project files for cross-file awareness ===
     try:
@@ -437,6 +504,7 @@ async def analyze_uploaded_files(
             code_hash = hashlib.sha256(code.encode()).hexdigest()
             analysis = Analysis(
                 user_id=current_user.id,
+                project_id=project_record.id if project_record else None,
                 file_path=fname,
                 language=lang,
                 code_hash=code_hash,
@@ -533,7 +601,8 @@ async def analyze_uploaded_files(
                         code=valid_files[i]["content"],
                         issues=r["issues"],
                         language=r["language"],
-                        filename=r["file_path"]
+                        filename=r["file_path"],
+                        plan_md=plan_md
                     )
                 )
         if fix_tasks:
@@ -543,6 +612,8 @@ async def analyze_uploaded_files(
         logger.warning(f"Auto-fix generation failed: {e}")
     
     return {
+        "project_id": project_record.id if project_record else None,
+        "plan_md": plan_md,
         "project_summary": project_summary_data,
         "ai_project_review": ai_project_review,
         "auto_fixes": auto_fixes,

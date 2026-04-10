@@ -56,6 +56,13 @@ interface TeamMetrics {
   error?: string;
 }
 
+interface ProjectRecord {
+  id: number;
+  name: string;
+  plan_md: string | null;
+  created_at: string;
+}
+
 interface AnalysisResult {
   analysis_id: number;
   status: string;
@@ -211,6 +218,14 @@ const api = {
     return await response.json();
   },
 
+  getProjects: async (): Promise<ProjectRecord[]> => {
+    const response = await fetch(`${API_BASE_URL}/analysis/projects`, {
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
+  },
+
   submitFeedback: async (suggestion_id: string, accepted: boolean, issue_type: string): Promise<any> => {
     const response = await fetch(`${API_BASE_URL}/feedback/submit`, {
       method: 'POST',
@@ -281,6 +296,7 @@ const IntelliReviewDashboard = () => {
   const [feedbackStats, setFeedbackStats] = useState<FeedbackStats | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [history, setHistory] = useState<AnalysisResult[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -304,18 +320,20 @@ const IntelliReviewDashboard = () => {
 
   const loadAllData = async () => {
     try {
-      const [m, t, tm, fs, h] = await Promise.all([
+      const [m, t, tm, fs, h, pList] = await Promise.all([
         api.getMetrics(),
         api.getTrends(),
         api.getTeamMetrics(),
         api.getFeedbackStats(),
-        api.getHistory()
+        api.getHistory(),
+        api.getProjects()
       ]);
       setMetrics(m);
       setTrends(t || []);
       setTeamMetrics(tm);
       setFeedbackStats(fs);
       setHistory(h || []);
+      setProjects(pList || []);
     } catch (error) {
       console.error('Failed to load data:', error);
     }
@@ -393,7 +411,7 @@ const IntelliReviewDashboard = () => {
         )}
 
         {currentView === 'history' && (
-          <HistoryView history={history} onSelect={(res) => { setAnalysisResult(res); setCurrentView('analyze'); }} />
+          <HistoryView history={history} projects={projects} onSelect={(res) => { setAnalysisResult(res); setCurrentView('analyze'); }} />
         )}
       </div>
     </div>
@@ -932,36 +950,104 @@ const MetricsView: React.FC<MetricsViewProps> = ({ metrics, teamMetrics, feedbac
   );
 };
 
-const HistoryView: React.FC<{ history: AnalysisResult[], onSelect: (res: AnalysisResult) => void }> = ({ history, onSelect }) => {
+const HistoryView: React.FC<{ history: AnalysisResult[], projects: ProjectRecord[], onSelect: (res: AnalysisResult) => void }> = ({ history, projects, onSelect }) => {
+  const [activeTab, setActiveTab] = useState<'projects' | 'snippets'>('projects');
+  const [expandedProject, setExpandedProject] = useState<number | null>(null);
+
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-2xl font-bold text-gray-800 mb-6 font-display">Analysis History</h2>
-      {history.length === 0 ? (
-        <p className="text-gray-500 text-center py-12">No analyses performed yet.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                <th className="pb-4">File</th>
-                <th className="pb-4">Language</th>
-                <th className="pb-4">Issues</th>
-                <th className="pb-4">Date</th>
-                <th className="pb-4">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {history.map((item) => (
-                <tr key={item.analysis_id} className="hover:bg-gray-50 transition-colors">
-                  <td className="py-4 font-medium text-gray-700">{item.file_path}</td>
-                  <td className="py-4"><span className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs">{item.language}</span></td>
-                  <td className="py-4 text-center"><span className="font-bold">{item.issues.length}</span></td>
-                  <td className="py-4 text-sm text-gray-500">{new Date(item.analyzed_at).toLocaleDateString()}</td>
-                  <td className="py-4"><button onClick={() => onSelect(item)} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">View Report</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      
+      {/* Tabs */}
+      <div className="flex space-x-4 border-b border-gray-200 mb-6">
+        <button
+          className={`py-2 px-4 border-b-2 font-medium text-sm focus:outline-none transition-colors ${
+            activeTab === 'projects' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+          }`}
+          onClick={() => setActiveTab('projects')}
+        >
+          Project Folders
+        </button>
+        <button
+          className={`py-2 px-4 border-b-2 font-medium text-sm focus:outline-none transition-colors ${
+            activeTab === 'snippets' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+          }`}
+          onClick={() => setActiveTab('snippets')}
+        >
+          Loose Files
+        </button>
+      </div>
+
+      {activeTab === 'projects' && (
+        <div>
+          {projects.length === 0 ? (
+            <p className="text-gray-500 text-center py-12">No project folders uploaded yet.</p>
+          ) : (
+             <div className="space-y-4">
+               {projects.map(p => (
+                 <div key={p.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                   <div 
+                     className="bg-gray-50 px-4 py-4 cursor-pointer hover:bg-gray-100 flex justify-between items-center"
+                     onClick={() => setExpandedProject(expandedProject === p.id ? null : p.id)}
+                   >
+                     <div>
+                       <h3 className="font-bold text-indigo-900 flex items-center gap-2">
+                         <span className="text-xl">📁</span> {p.name}
+                       </h3>
+                       <p className="text-xs text-gray-500 mt-1">Uploaded: {new Date(p.created_at).toLocaleString()}</p>
+                     </div>
+                     <button className="text-indigo-600 text-sm font-semibold">
+                       {expandedProject === p.id ? 'Hide Plan' : 'View Architecture Plan'}
+                     </button>
+                   </div>
+                   
+                   {expandedProject === p.id && (
+                     <div className="p-6 bg-white border-t border-gray-200">
+                       <h4 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">AI Architectural Plan</h4>
+                       <div className="prose prose-sm max-w-none text-gray-700">
+                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                           {p.plan_md || "*No architectural plan generated.*"}
+                         </ReactMarkdown>
+                       </div>
+                     </div>
+                   )}
+                 </div>
+               ))}
+             </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'snippets' && (
+        <div>
+          {history.length === 0 ? (
+            <p className="text-gray-500 text-center py-12">No standalone files analyzed yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    <th className="pb-4">File</th>
+                    <th className="pb-4">Language</th>
+                    <th className="pb-4">Issues</th>
+                    <th className="pb-4">Date</th>
+                    <th className="pb-4">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {history.map((item) => (
+                    <tr key={item.analysis_id} className="hover:bg-gray-50 transition-colors">
+                      <td className="py-4 font-medium text-gray-700">{item.file_path}</td>
+                      <td className="py-4"><span className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs">{item.language}</span></td>
+                      <td className="py-4 text-center"><span className="font-bold">{item.issues.length}</span></td>
+                      <td className="py-4 text-sm text-gray-500">{new Date(item.analyzed_at).toLocaleDateString()}</td>
+                      <td className="py-4"><button onClick={() => onSelect(item)} className="text-blue-600 hover:text-blue-800 font-semibold text-sm">View Report</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

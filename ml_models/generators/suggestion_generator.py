@@ -429,12 +429,42 @@ Keep the entire review under 800 words. Be specific, cite file names and line nu
                 "severity": issue.get('severity')
             }
 
+    async def generate_project_plan_async(
+        self,
+        config_files_content: str,
+        directory_tree: str
+    ) -> str:
+        """Generate a logic-first architectural plan.md based on project configs and tree."""
+        prompt = f"""You are an elite Software Architecture Reviewer. Your first task in reviewing a new project is to build a "plan.md" that maps the holistic understanding of the project.
+
+Here is the directory tree of the project:
+{directory_tree}
+
+Here are the contents of the core configuration files (e.g. package.json, requirements.txt, README.md):
+{config_files_content}
+
+Write a comprehensive `plan.md` document that:
+1. Identifies the core purpose and assumed architecture (e.g. MVC, Microservices, Serverless).
+2. Maps out the critical data flows and primary tech stack priorities.
+3. Defines the exact "Review Workflow" — which core logic files must be prioritized to identify logical debt.
+
+Output ONLY the markdown content for plan.md."""
+        
+        try:
+            if self.provider == "huggingface":
+                return await self._call_huggingface_async_long(prompt)
+            else:
+                return self._call_openai(prompt)
+        except Exception as e:
+            return f"# IntelliReview Default Plan\nFailed to generate project plan from LLM: {str(e)}"
+
     async def generate_auto_fix_async(
         self,
         code: str,
         issues: List[Dict],
         language: str = "python",
-        filename: str = "file"
+        filename: str = "file",
+        plan_md: Optional[str] = None
     ) -> Dict:
         """Generate a unified diff patch that auto-fixes the top issues in the code."""
         
@@ -456,8 +486,17 @@ Issues to fix:
 Original code:
 ```{language}
 {code}
-```
+```"""
 
+        if plan_md:
+            prompt += f"""\n
+--- PROJECT ARCHITECTURE PLAN (plan.md) ---
+{plan_md}
+----------------------------------------
+CRITICAL INSTRUCTION: Ensure your fix is validated against the architectural plan above. Do not break core data flows, architectural invariants, or the project's logic intent just to fix a local syntax error.
+"""
+
+        prompt += f"""\n
 Respond with ONLY a unified diff patch in this exact format (no explanation, no markdown fences around the diff):
 
 --- a/{filename}
@@ -468,8 +507,9 @@ Respond with ONLY a unified diff patch in this exact format (no explanation, no 
 
 Rules:
 - Fix ONLY the listed issues. Do not refactor unrelated code.
+- Validate your fix logic against the project plan if provided.
 - Keep the diff minimal — change only the lines that need fixing.
-- If an issue cannot be auto-fixed safely, skip it.
+- If an issue cannot be auto-fixed safely without violating architecture, skip it.
 - Output ONLY the diff, nothing else."""
         
         try:

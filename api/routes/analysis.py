@@ -372,8 +372,8 @@ async def analyze_uploaded_files(
             "errors": errors,
         }
     
-    # Analyze each file (cap at 20 files to avoid timeout)
-    for file_info in valid_files[:20]:
+    # Analyze each file
+    for file_info in valid_files:
         try:
             code = file_info["content"]
             lang = file_info["language"]

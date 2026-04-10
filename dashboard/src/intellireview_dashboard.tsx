@@ -237,10 +237,11 @@ const api = {
         // Skip binary extensions
         if (binaryExts.some(ext => path.toLowerCase().endsWith(ext))) continue;
         
-        // Cap at 100 files to prevent server payload rejection (HTTP 413 / 400)
-        if (addedCount >= 100) break;
+        // Prevent browser crashes by capping at a very large safe limit (5000 files)
+        if (addedCount >= 5000) break;
         
-        formData.append('files', file);
+        // Pass the full relative nested path so IntelliReview preserves the directory structure!
+        formData.append('files', file, path);
         addedCount++;
     }
     

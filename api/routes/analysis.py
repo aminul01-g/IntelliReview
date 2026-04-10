@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import hashlib
@@ -297,13 +297,20 @@ SKIP_PATTERNS = {
 
 @router.post("/upload")
 async def analyze_uploaded_files(
-    files: List[UploadFile] = File(default=[]),
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Analyze uploaded files or folders. Accepts multiple files via multipart upload."""
     import os
     import asyncio
+    
+    # Safely parse the form data directly to avoid FastAPI 400 Pydantic errors on large multipart requests
+    try:
+        form_data = await request.form()
+        files = form_data.getlist("files")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse multipart form data: {str(e)}")
     
     start_time = time.time()
     results = []

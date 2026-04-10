@@ -1,6 +1,8 @@
 import ast
 from typing import List, Dict
 import io
+import os
+import tempfile
 from pylint.lint import Run
 from pylint.reporters.text import TextReporter
 
@@ -91,13 +93,14 @@ class QualityDetector:
             })
             return issues  # Return immediately, can't analyze invalid syntax
 
-        # 2. Use Pylint for broader checks
-        with open(filename, "w") as f:
-            f.write(code)
+        # 2. Use Pylint for broader checks using an isolated temporary file to prevent Errno 2
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp_file:
+            tmp_file.write(code)
+            temp_path = tmp_file.name
 
         try:
             pylint_args = [
-                filename,
+                temp_path,
                 '--disable=all',
                 '--enable=E,W',
                 '--disable=import-error,missing-docstring,unused-import,invalid-name,empty-docstring,C0114,C0115,C0116', 
@@ -128,13 +131,25 @@ class QualityDetector:
                                 "type": "code_quality",
                                 "severity": severity,
                                 "line": line_no,
-                                "message": msg,
-                                "suggestion": "Fix the reported bug or quality issue"
+                                "message": f"Pylint: {msg}",
+                                "suggestion": "Fix this code quality issue."
                             })
-                        except ValueError:
-                            continue
-        except Exception:
-            pass
+                        except Exception as e:
+                            pass
+        except Exception as e:
+            issues.append({
+                "type": "error",
+                "severity": "medium",
+                "line": 1,
+                "message": f"Pylint analysis failed: {str(e)}",
+                "suggestion": ""
+            })
+        finally:
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
             
         return issues
 

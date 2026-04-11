@@ -7,7 +7,8 @@ import {
 } from 'recharts';
 import {
   Code, AlertTriangle, CheckCircle, TrendingUp,
-  LogOut, User, Home, Activity, Upload
+  // @ts-ignore - GitCompareArrows exists in lucide-react esm but may not be in all type declarations
+  LogOut, User, Home, Activity, Upload, GitCompareArrows, Settings
 } from 'lucide-react';
 
 // Types
@@ -268,6 +269,36 @@ const api = {
     return await response.json();
   },
 
+  diffReview: async (diff: string): Promise<any> => {
+    const response = await fetch(`${API_BASE_URL}/analysis/diff-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ diff }),
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
+  },
+
+  customRules: async (code: string, language: string, rules: any[]): Promise<any> => {
+    const response = await fetch(`${API_BASE_URL}/analysis/custom-rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, language, rules }),
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
+  },
+
+  getProjectAnalyses: async (projectId: number): Promise<AnalysisResult[]> => {
+    const response = await fetch(`${API_BASE_URL}/analysis/history?project_id=${projectId}`, {
+      credentials: 'include'
+    });
+    if (!response.ok) await handleApiError(response);
+    return await response.json();
+  },
+
   uploadFiles: async (files: FileList): Promise<ProjectUploadResult> => {
     const formData = new FormData();
     const commonIgnores = ['node_modules', '.git', '.venv', 'venv', '__pycache__', 'build', 'dist', '.next', 'coverage'];
@@ -430,6 +461,20 @@ const IntelliReviewDashboard = () => {
       <div className="ml-64 p-8">
         <Header user={user} />
 
+        {globalError && (
+          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex justify-between items-center">
+            <span className="text-sm">{globalError}</span>
+            <button onClick={() => setGlobalError(null)} className="text-red-400 hover:text-red-600 font-bold text-lg">&times;</button>
+          </div>
+        )}
+
+        {dashboardLoading && (
+          <div className="mb-6 text-center py-8">
+            <div className="inline-block w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+            <p className="mt-2 text-sm text-gray-500">Loading dashboard data...</p>
+          </div>
+        )}
+
         {currentView === 'dashboard' && (
           <DashboardView metrics={metrics} trends={trends} />
         )}
@@ -451,6 +496,14 @@ const IntelliReviewDashboard = () => {
 
         {currentView === 'history' && (
           <HistoryView history={history} projects={projects} onSelect={(res) => { setAnalysisResult(res); setCurrentView('analyze'); }} />
+        )}
+
+        {currentView === 'diff-review' && (
+          <DiffReviewView />
+        )}
+
+        {currentView === 'custom-rules' && (
+          <CustomRulesView />
         )}
       </div>
     </div>
@@ -555,6 +608,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, user, on
     { id: 'dashboard', icon: Home, label: 'Dashboard' },
     { id: 'analyze', icon: Code, label: 'Analyze Code' },
     { id: 'upload', icon: Upload, label: 'Upload Project' },
+    { id: 'diff-review', icon: GitCompareArrows, label: 'Diff Review' },
+    { id: 'custom-rules', icon: Settings, label: 'Custom Rules' },
     { id: 'history', icon: Activity, label: 'History' },
     { id: 'metrics', icon: Activity, label: 'Metrics' }
   ];
@@ -1006,6 +1061,26 @@ const MetricsView: React.FC<MetricsViewProps> = ({ metrics, teamMetrics, feedbac
 const HistoryView: React.FC<{ history: AnalysisResult[], projects: ProjectRecord[], onSelect: (res: AnalysisResult) => void }> = ({ history, projects, onSelect }) => {
   const [activeTab, setActiveTab] = useState<'projects' | 'snippets'>('projects');
   const [expandedProject, setExpandedProject] = useState<number | null>(null);
+  const [projectAnalyses, setProjectAnalyses] = useState<Record<number, AnalysisResult[]>>({});
+  const [loadingProject, setLoadingProject] = useState<number | null>(null);
+
+  const handleToggleProject = async (projectId: number) => {
+    if (expandedProject === projectId) {
+      setExpandedProject(null);
+      return;
+    }
+    setExpandedProject(projectId);
+    if (!projectAnalyses[projectId]) {
+      setLoadingProject(projectId);
+      try {
+        const analyses = await api.getProjectAnalyses(projectId);
+        setProjectAnalyses(prev => ({ ...prev, [projectId]: analyses }));
+      } catch (e) {
+        console.error('Failed to load project analyses:', e);
+      }
+      setLoadingProject(null);
+    }
+  };
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -1041,7 +1116,7 @@ const HistoryView: React.FC<{ history: AnalysisResult[], projects: ProjectRecord
                  <div key={p.id} className="border border-gray-200 rounded-lg overflow-hidden">
                    <div 
                      className="bg-gray-50 px-4 py-4 cursor-pointer hover:bg-gray-100 flex justify-between items-center"
-                     onClick={() => setExpandedProject(expandedProject === p.id ? null : p.id)}
+                     onClick={() => handleToggleProject(p.id)}
                    >
                      <div>
                        <h3 className="font-bold text-indigo-900 flex items-center gap-2">
@@ -1050,18 +1125,50 @@ const HistoryView: React.FC<{ history: AnalysisResult[], projects: ProjectRecord
                        <p className="text-xs text-gray-500 mt-1">Uploaded: {new Date(p.created_at).toLocaleString()}</p>
                      </div>
                      <button className="text-indigo-600 text-sm font-semibold">
-                       {expandedProject === p.id ? 'Hide Plan' : 'View Architecture Plan'}
+                       {expandedProject === p.id ? 'Collapse' : 'View Details'}
                      </button>
                    </div>
                    
                    {expandedProject === p.id && (
                      <div className="p-6 bg-white border-t border-gray-200">
+                       {/* Architecture Plan */}
                        <h4 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">AI Architectural Plan</h4>
-                       <div className="prose prose-sm max-w-none text-gray-700">
+                       <div className="prose prose-sm max-w-none text-gray-700 mb-6">
                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
                            {p.plan_md || "*No architectural plan generated.*"}
                          </ReactMarkdown>
                        </div>
+
+                       {/* File-Level Analyses Drill-Down */}
+                       <h4 className="text-lg font-bold text-gray-800 mb-3 border-b pb-2">File Analyses</h4>
+                       {loadingProject === p.id ? (
+                         <p className="text-gray-400 text-sm py-4 text-center">Loading file analyses...</p>
+                       ) : projectAnalyses[p.id] && projectAnalyses[p.id].length > 0 ? (
+                         <div className="overflow-x-auto">
+                           <table className="w-full text-sm">
+                             <thead>
+                               <tr className="border-b text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                                 <th className="pb-3">File</th>
+                                 <th className="pb-3">Language</th>
+                                 <th className="pb-3">Issues</th>
+                                 <th className="pb-3">Action</th>
+                               </tr>
+                             </thead>
+                             <tbody className="divide-y">
+                               {projectAnalyses[p.id].map(a => (
+                                 <tr key={a.analysis_id} className="hover:bg-gray-50 transition-colors">
+                                   <td className="py-3 font-medium text-gray-700">{a.file_path}</td>
+                                   <td className="py-3"><span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">{a.language}</span></td>
+                                   <td className="py-3 text-center font-bold">{a.issues.length}</td>
+                                   <td className="py-3"><button onClick={() => onSelect(a)} className="text-blue-600 hover:text-blue-800 font-semibold text-xs">View Report</button></td>
+                                 </tr>
+                               ))}
+                             </tbody>
+                           </table>
+                         </div>
+                       ) : (
+                         <p className="text-gray-400 text-sm py-2">No file analyses found for this project.</p>
+                       )}
                      </div>
                    )}
                  </div>
@@ -1100,6 +1207,239 @@ const HistoryView: React.FC<{ history: AnalysisResult[], projects: ProjectRecord
                 </tbody>
               </table>
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ===================== DIFF REVIEW VIEW =====================
+
+const DiffReviewView: React.FC = () => {
+  const [diffText, setDiffText] = useState('');
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleReview = async () => {
+    if (!diffText.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await api.diffReview(diffText);
+      setResult(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Diff review failed');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2 font-display">Diff Review</h2>
+        <p className="text-gray-500 text-sm mb-6">Paste the output of <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">git diff</code> to review only the changed lines.</p>
+
+        <textarea
+          value={diffText}
+          onChange={(e) => setDiffText(e.target.value)}
+          placeholder={`diff --git a/app.py b/app.py\n--- a/app.py\n+++ b/app.py\n@@ -10,3 +10,5 @@\n+import os\n+password = os.environ["DB_PASS"]`}
+          className="w-full h-64 font-mono text-sm border border-gray-300 rounded-lg p-4 bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
+        />
+
+        <button
+          onClick={handleReview}
+          disabled={loading || !diffText.trim()}
+          className="mt-4 px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading ? 'Analyzing Diff...' : 'Review Changes'}
+        </button>
+
+        {error && <p className="mt-4 text-red-600 text-sm bg-red-50 p-3 rounded-lg">{error}</p>}
+      </div>
+
+      {result && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-bold text-gray-800">Review Results</h3>
+            <span className={`text-lg font-bold px-4 py-1.5 rounded-full ${
+              result.verdict?.includes('Clean') ? 'bg-green-100 text-green-800' :
+              result.verdict?.includes('attention') ? 'bg-yellow-100 text-yellow-800' :
+              'bg-red-100 text-red-800'
+            }`}>
+              {result.verdict}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <p className="text-2xl font-bold text-gray-800">{result.files_reviewed}</p>
+              <p className="text-xs text-gray-500 mt-1">Files Reviewed</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <p className="text-2xl font-bold text-gray-800">{result.total_added_lines}</p>
+              <p className="text-xs text-gray-500 mt-1">Lines Added</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <p className={`text-2xl font-bold ${result.total_issues > 0 ? 'text-red-600' : 'text-green-600'}`}>{result.total_issues}</p>
+              <p className="text-xs text-gray-500 mt-1">Issues Found</p>
+            </div>
+          </div>
+
+          {result.file_results?.map((fr: any, idx: number) => (
+            <div key={idx} className="border border-gray-200 rounded-lg mb-4 overflow-hidden">
+              <div className="bg-gray-50 px-4 py-3 flex justify-between items-center">
+                <span className="font-mono text-sm font-bold text-gray-700">{fr.file}</span>
+                <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded">{fr.language} — {fr.issue_count} issues</span>
+              </div>
+              <div className="p-4 space-y-2">
+                {fr.issues?.map((issue: any, i: number) => (
+                  <div key={i} className="flex items-start gap-3 text-sm">
+                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase whitespace-nowrap ${
+                      issue.severity === 'critical' ? 'bg-red-100 text-red-800' :
+                      issue.severity === 'high' ? 'bg-orange-100 text-orange-800' :
+                      issue.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>{issue.severity}</span>
+                    <span className="text-gray-400 font-mono">L{issue.line}</span>
+                    <span className="text-gray-700">{issue.message}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ===================== CUSTOM RULES VIEW =====================
+
+const CustomRulesView: React.FC = () => {
+  const [code, setCode] = useState('');
+  const [language, setLanguage] = useState('python');
+  const [rulesJson, setRulesJson] = useState(`[
+  {
+    "id": "no-print",
+    "pattern": "print\\\\(",
+    "message": "Use logging instead of print()",
+    "severity": "medium",
+    "languages": ["python"]
+  },
+  {
+    "id": "no-eval",
+    "pattern": "eval\\\\(",
+    "message": "Never use eval() — security risk",
+    "severity": "critical"
+  }
+]`);
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleRun = async () => {
+    if (!code.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const rules = JSON.parse(rulesJson);
+      const res = await api.customRules(code, language, rules);
+      setResult(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Custom rules evaluation failed');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-2xl font-bold text-gray-800 mb-2 font-display">Custom Rules Engine</h2>
+        <p className="text-gray-500 text-sm mb-6">Define custom pattern-matching rules and test them against code. Rules follow the <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">.intellireview.yml</code> format.</p>
+
+        <div className="grid grid-cols-2 gap-6">
+          {/* Left: Code Input */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-semibold text-gray-700">Code to Test</label>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="text-xs border border-gray-300 rounded px-2 py-1"
+              >
+                <option value="python">Python</option>
+                <option value="javascript">JavaScript</option>
+                <option value="java">Java</option>
+                <option value="cpp">C/C++</option>
+              </select>
+            </div>
+            <textarea
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder={`# Paste code to evaluate\nimport os\nprint(os.environ["SECRET"])\nresult = eval(user_input)`}
+              className="w-full h-64 font-mono text-sm border border-gray-300 rounded-lg p-4 bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
+            />
+          </div>
+
+          {/* Right: Rules JSON */}
+          <div>
+            <label className="text-sm font-semibold text-gray-700 block mb-2">Rules (JSON Array)</label>
+            <textarea
+              value={rulesJson}
+              onChange={(e) => setRulesJson(e.target.value)}
+              className="w-full h-64 font-mono text-sm border border-gray-300 rounded-lg p-4 bg-gray-50 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-y"
+            />
+          </div>
+        </div>
+
+        <button
+          onClick={handleRun}
+          disabled={loading || !code.trim()}
+          className="mt-4 px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading ? 'Evaluating...' : 'Run Custom Rules'}
+        </button>
+
+        {error && <p className="mt-4 text-red-600 text-sm bg-red-50 p-3 rounded-lg">{error}</p>}
+      </div>
+
+      {result && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-bold text-gray-800">Evaluation Results</h3>
+            <div className="flex gap-3">
+              <span className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-medium">{result.rules_evaluated} rules evaluated</span>
+              <span className={`text-sm px-3 py-1 rounded-full font-medium ${result.issues_found > 0 ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+                {result.issues_found} violations
+              </span>
+            </div>
+          </div>
+
+          {result.issues?.length > 0 ? (
+            <div className="space-y-3">
+              {result.issues.map((issue: any, i: number) => (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors">
+                  <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase whitespace-nowrap ${
+                    issue.severity === 'critical' ? 'bg-red-100 text-red-800' :
+                    issue.severity === 'high' ? 'bg-orange-100 text-orange-800' :
+                    issue.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>{issue.severity}</span>
+                  <span className="text-gray-400 font-mono text-sm">L{issue.line}</span>
+                  <div className="flex-1">
+                    <p className="text-sm text-gray-800">{issue.message}</p>
+                    {issue.suggestion && <p className="text-xs text-blue-600 mt-1">{issue.suggestion}</p>}
+                  </div>
+                  <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded font-mono">{issue.type}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-center text-green-600 py-8 text-lg font-medium">No violations found. Code passes all custom rules.</p>
           )}
         </div>
       )}

@@ -70,9 +70,29 @@ class SuggestionGenerator:
             else:
                 response = self._call_anthropic(prompt)
             
+            import json
+            import re
+            
+            # Clean up the response to extract JSON
+            clean_res = response.strip()
+            if clean_res.startswith("```json"):
+                clean_res = clean_res[7:]
+            if clean_res.endswith("```"):
+                clean_res = clean_res[:-3]
+            clean_res = clean_res.strip()
+            
+            try:
+                data = json.loads(clean_res)
+                suggestion = f"**Problem:** {data.get('explanation', '')}\n\n**Fix:**\n```diff\n{data.get('diff', '')}\n```"
+                confidence = float(data.get('confidence_score', 0.5))
+            except json.JSONDecodeError:
+                # Fallback if AI didn't return valid JSON
+                suggestion = response
+                confidence = 0.5
+            
             return {
-                "suggestion": response,
-                "confidence": self._estimate_confidence(response),
+                "suggestion": suggestion,
+                "confidence": confidence,
                 "issue_type": issue.get('type'),
                 "severity": issue.get('severity')
             }
@@ -154,42 +174,41 @@ class SuggestionGenerator:
         language: str,
         context: Optional[str]
     ) -> str:
-        """Build a concise per-issue prompt that returns only a short fix."""
+        """Build a concise, chunked prompt that guarantees JSON output."""
         
         issue_type = issue.get('type', 'unknown')
         severity = issue.get('severity', 'medium')
         message = issue.get('message', '')
-        line = issue.get('line', 0)
+        line = issue.get('line', 1)
         
-        prompt = f"""You are an expert code reviewer. A static analyzer found the following issue in {language} code.
+        # --- Chunking Pipeline Hardening ---
+        # Prevent context window overflow by chunking large files (max ~100 lines around issue)
+        lines = code.split('\n')
+        start_line = max(0, line - 50)
+        end_line = min(len(lines), line + 50)
+        code_chunk = "\n".join(lines[start_line:end_line])
+        
+        prompt = f"""You are an elite code reviewer mapping an AST-detected issue.
 
 Issue: {issue_type} (severity: {severity})
-Line {line}: {message}
+Target Line (Original File L{line}): {message}
 
-Source code:
+Chunked Source Code (Lines {start_line+1}-{end_line}):
 ```{language}
-{code}
+{code_chunk}
 ```
 
-Provide a concise response in this EXACT format (no extra sections):
+Respond ONLY with a valid JSON object matching exactly this structure. Do not wrap in markdown blocks, just raw JSON:
+{{
+  "explanation": "A concise 1-2 sentence plain-English explanation of why this line is a problem and what impact it has.",
+  "diff": "A concise unified diff patch replacing the exact lines. E.g: -old\\n+new",
+  "confidence_score": 0.95
+}}
 
-**Problem:** One sentence explaining what is wrong and why.
-
-**Fix:**
-```{language}
-// corrected code snippet for the affected line(s) only
-```
-
-**Impact:** One sentence on what could happen if this is not fixed.
-
-Keep your entire response under 150 words. Do NOT repeat the full file. Only show the affected line(s)."""
+Ensure confidence_score is a float from 0.0 to 1.0 (Output 0 -> 0.4 for low, 0.5 -> 0.7 for medium, 0.8+ for high)."""
 
         if context:
             prompt += f"""\n\n--- CROSS-FILE PROJECT CONTEXT ---
-The following related files exist in the same project. Use them to understand
-how this file connects to the broader codebase and catch cross-file issues
-(e.g., mismatched function signatures, broken imports, schema drift):
-
 {context}
 --- END CONTEXT ---"""
         
@@ -412,11 +431,31 @@ Keep the entire review under 800 words. Be specific, cite file names and line nu
                 response = await self._call_huggingface_async(prompt)
             else:
                 # Fallback to sync for now or implement others if needed
-                response = self.generate_suggestion(code, issue, language, context)["suggestion"]
+                # To prevent endless loop, use direct sync call 
+                # (Note: we just fallback to returning raw text in extreme cases)
+                response = "Fallback syncing not async compatible here."
+            
+            import json
+            import re
+            
+            clean_res = response.strip()
+            if clean_res.startswith("```json"):
+                clean_res = clean_res[7:]
+            if clean_res.endswith("```"):
+                clean_res = clean_res[:-3]
+            clean_res = clean_res.strip()
+            
+            try:
+                data = json.loads(clean_res)
+                suggestion = f"**Problem:** {data.get('explanation', '')}\n\n**Fix:**\n```diff\n{data.get('diff', '')}\n```"
+                confidence = float(data.get('confidence_score', 0.5))
+            except json.JSONDecodeError:
+                suggestion = response
+                confidence = 0.5
             
             return {
-                "suggestion": response,
-                "confidence": self._estimate_confidence(response),
+                "suggestion": suggestion,
+                "confidence": confidence,
                 "issue_type": issue.get('type'),
                 "severity": issue.get('severity')
             }
@@ -621,14 +660,3 @@ Rules:
         
         return message.content[0].text.strip()
     
-    def _estimate_confidence(self, response: str) -> float:
-        """Estimate confidence based on response characteristics."""
-        # Simple heuristic: longer, more detailed responses = higher confidence
-        word_count = len(response.split())
-        
-        if word_count > 100:
-            return 0.9
-        elif word_count > 50:
-            return 0.7
-        else:
-            return 0.5

@@ -31,13 +31,21 @@ class SecurityScanner:
             b_mgr.run_tests()
             
             for issue in b_mgr.get_issue_list():
+                # Bandit's CWE is an object with an id property, not a dict.
+                cwe_id = None
+                if hasattr(issue, 'cwe') and issue.cwe:
+                    cwe_id = getattr(issue.cwe, 'id', None)
+                    
+                ref_url = f"https://cwe.mitre.org/data/definitions/{cwe_id}.html" if cwe_id else None
+                
                 issues.append({
                     "type": "security_vulnerability",
-                    "severity": issue.severity.lower(),
+                    "severity": issue.severity.lower() if hasattr(issue, 'severity') and issue.severity else "medium",
                     "line": issue.lineno,
                     "message": issue.text,
-                    "suggestion": "Review and fix the security issue",
-                    "cwe": issue.cwe.get('id') if hasattr(issue, 'cwe') else None
+                    "suggestion": "Review Bandit documentation for mitigation.",
+                    "cwe": f"CWE-{cwe_id}" if cwe_id else None,
+                    "reference_url": ref_url
                 })
         
         except Exception as e:
@@ -58,8 +66,10 @@ class SecurityScanner:
                     "type": "security_vulnerability",
                     "severity": "high",
                     "line": i,
-                    "message": "Use of eval() detected",
-                    "suggestion": "Avoid eval() as it can execute arbitrary code"
+                    "message": "Use of eval() detected. Allows arbitrary code execution.",
+                    "suggestion": "Avoid eval() and replace with safer logic like JSON.parse().",
+                    "cwe": "CWE-94",
+                    "reference_url": "https://owasp.org/www-community/attacks/Code_Injection"
                 })
         
         # Check for innerHTML usage (XSS risk)
@@ -67,10 +77,12 @@ class SecurityScanner:
             if '.innerHTML' in line and '=' in line:
                 issues.append({
                     "type": "security_vulnerability",
-                    "severity": "medium",
+                    "severity": "high",
                     "line": i,
-                    "message": "Direct innerHTML assignment (XSS risk)",
-                    "suggestion": "Use textContent or sanitize input"
+                    "message": "Direct innerHTML assignment creates an XSS vulnerability vector.",
+                    "suggestion": "Use textContent, DOMPurify, or safe template frameworks to bind external data.",
+                    "cwe": "CWE-79",
+                    "reference_url": "https://owasp.org/www-community/attacks/xss/"
                 })
         
         return issues
@@ -80,7 +92,7 @@ class SecurityScanner:
         issues = []
         lines = code.split('\n')
         
-        # Hardcoded secrets
+        # Hardcoded secrets (CWE-798)
         secret_patterns = [
             (r'password\s*=\s*["\'](.+?)["\']', "hardcoded password"),
             (r'api[_-]?key\s*=\s*["\'](.+?)["\']', "hardcoded API key"),
@@ -95,11 +107,13 @@ class SecurityScanner:
                         "type": "security_vulnerability",
                         "severity": "critical",
                         "line": i,
-                        "message": f"Possible {desc} detected",
-                        "suggestion": "Use environment variables or secure credential storage"
+                        "message": f"Possible {desc} detected.",
+                        "suggestion": "Extract secrets into environment variables (.env) or a Vault.",
+                        "cwe": "CWE-798",
+                        "reference_url": "https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/"
                     })
         
-        # SQL Injection patterns
+        # SQL Injection patterns (CWE-89)
         sql_patterns = [
             r'execute\s*\(\s*["\'].*%s.*["\']',
             r'query\s*\(\s*["\'].*\+.*["\']',
@@ -112,8 +126,10 @@ class SecurityScanner:
                         "type": "security_vulnerability",
                         "severity": "critical",
                         "line": i,
-                        "message": "Possible SQL injection vulnerability",
-                        "suggestion": "Use parameterized queries or ORM"
+                        "message": "String concatenation in query detects a direct SQL Injection risk.",
+                        "suggestion": "Rewrite using parameterized SQL queries or a safe ORM abstraction.",
+                        "cwe": "CWE-89",
+                        "reference_url": "https://owasp.org/www-community/attacks/SQL_Injection"
                     })
         
         return issues

@@ -71,6 +71,37 @@ class AntiPatternDetector:
                         "suggestion": f"Replace with a named constant"
                     })
         
+        # Asyncio blocks in loops (Phase 4 Depth)
+        in_loop = False
+        in_loop_indent = 0
+        for i, line in enumerate(lines, 1):
+            stripped = line.lstrip()
+            indent = len(line) - len(stripped)
+            
+            if stripped.startswith("for ") or stripped.startswith("while "):
+                in_loop = True
+                in_loop_indent = indent
+            elif in_loop and indent <= in_loop_indent and stripped:
+                in_loop = False
+                
+            if in_loop and "await " in stripped:
+                issues.append({
+                    "type": "asyncio_loop_blocking",
+                    "severity": "high",
+                    "line": i,
+                    "message": "Using 'await' inside a loop creates sequential blocking.",
+                    "suggestion": "Gather tasks in a list and use 'await asyncio.gather(*tasks)' for concurrent execution."
+                })
+                
+            if in_loop and ".objects." in stripped and ("filter" in stripped or "get" in stripped or "all" in stripped):
+                issues.append({
+                    "type": "orm_n_plus_one",
+                    "severity": "critical",
+                    "line": i,
+                    "message": "Database query inside a loop (Django ORM N+1 Problem).",
+                    "suggestion": "Move the query outside the loop or use 'select_related' / 'prefetch_related'."
+                })
+        
         # Nested loops (deep nesting)
         nested_depth, offending_line = self._check_nesting_depth(ast)
         if nested_depth > 3:
@@ -110,6 +141,22 @@ class AntiPatternDetector:
                     "message": "Using '==' instead of '==='",
                     "suggestion": "Use strict equality '===' for type-safe comparisons"
                 })
+        
+        # React Hooks Depth (Phase 4 Depth)
+        full_code = " ".join(l.strip() for l in lines)
+        # Match useEffect without a dependency array (e.g. useEffect(() => { ... }))
+        if re.search(r'useEffect\s*\([^,\]]+\)\s*;', full_code) or re.search(r'useEffect\s*\([^,\]]+\)[^,]*\}\)', full_code):
+             # Try to find the line
+             for i, line in enumerate(lines, 1):
+                 if 'useEffect' in line and ']' not in line:
+                     issues.append({
+                         "type": "react_hook_missing_deps",
+                         "severity": "high",
+                         "line": i,
+                         "message": "useEffect is missing a dependency array, risking immense re-renders.",
+                         "suggestion": "Add a dependency array '[]' to run once, or list exact dependencies."
+                     })
+                     break
         
         return issues
     

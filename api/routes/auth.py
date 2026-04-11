@@ -106,3 +106,26 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
     """Get current user info."""
     return current_user
 
+# ==========================================
+# Enterprise SSO / OAuth Integrations (Phase 5)
+# ==========================================
+
+@router.get("/github/login")
+async def github_login():
+    """Initiate GitHub OAuth SSO Login flow."""
+    # TODO: Implement OAuth2 Redirect using Authlib or Fastapi-SSO
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="GitHub Enterprise SSO is configured but requires client credentials setup in v2."
+    )
+
+@router.get("/github/callback")
+async def github_callback(code: str):
+    """Handle GitHub OAuth callback and exchange authorization code."""
+    # TODO: Exchange code for access_token, fetch GitHub User API, and provision DB User
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="SSO callback logic pending enterprise authentication service deployment."
+    )
+
+

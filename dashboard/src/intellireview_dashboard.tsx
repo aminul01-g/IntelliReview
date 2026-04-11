@@ -24,6 +24,8 @@ interface Issue {
   suggestion?: string;
   confidence?: number;
   quick_fix?: string;
+  cwe?: string;
+  reference_url?: string;
 }
 
 interface FeedbackStats {
@@ -31,6 +33,7 @@ interface FeedbackStats {
     total_suggestions: number;
     acceptance_rate: number;
     rejection_rate: number;
+    current_weight: number;
   }>;
   total_issue_types: number;
 }
@@ -843,6 +846,15 @@ const AnalyzeView: React.FC<AnalyzeViewProps> = ({ onAnalyze, result }) => {
                                 <div className="flex items-center space-x-2 mb-1">
                                   <span className="text-xs font-mono bg-gray-200 text-gray-700 px-2 py-0.5 rounded">L{issue.line}</span>
                                   <span className="text-sm font-semibold text-gray-800">{issue.type.replace(/_/g, ' ')}</span>
+                                  {issue.cwe && issue.reference_url ? (
+                                    <a href={issue.reference_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200 hover:bg-amber-200 transition-colors">
+                                      🛡️ {issue.cwe}
+                                    </a>
+                                  ) : issue.cwe ? (
+                                    <span className="text-xs font-bold bg-gray-100 text-gray-800 px-2 py-0.5 rounded border border-gray-200">
+                                      🛡️ {issue.cwe}
+                                    </span>
+                                  ) : null}
                                   {issue.confidence && <span className="text-xs text-gray-400">{Math.round(issue.confidence * 100)}% confidence</span>}
                                 </div>
                                 <p className="text-sm text-gray-600">{issue.message}</p>
@@ -939,7 +951,12 @@ const MetricsView: React.FC<MetricsViewProps> = ({ metrics, teamMetrics, feedbac
             {Object.entries(feedbackStats.statistics).map(([type, data]) => (
               <div key={type} className="p-4 bg-gray-50 rounded-lg border">
                 <p className="text-xs font-bold text-gray-500 uppercase">{type}</p>
-                <p className="text-2xl font-bold text-gray-800">{Math.round(data.acceptance_rate * 100)}%</p>
+                <div className="flex justify-between items-end mt-1">
+                   <p className="text-2xl font-bold text-gray-800">{Math.round(data.acceptance_rate * 100)}%</p>
+                   <p className="text-xs font-bold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full mb-1 border border-indigo-200 shadow-sm">
+                     Weight: {data.current_weight}
+                   </p>
+                </div>
                 <div className="w-full bg-gray-200 h-1 rounded-full mt-2"><div className="bg-green-500 h-1 rounded-full" style={{ width: `${data.acceptance_rate * 100}%` }} /></div>
               </div>
             ))}
@@ -1342,6 +1359,15 @@ const ProjectUploadView: React.FC = () => {
                         <div className="flex items-center space-x-2 mb-0.5">
                           <span className="text-xs font-mono bg-gray-200 text-gray-700 px-2 py-0.5 rounded">L{issue.line}</span>
                           <span className="text-sm font-semibold text-gray-800">{issue.type.replace(/_/g, ' ')}</span>
+                          {issue.cwe && issue.reference_url ? (
+                            <a href={issue.reference_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200 hover:bg-amber-200 transition-colors">
+                              🛡️ {issue.cwe}
+                            </a>
+                          ) : issue.cwe ? (
+                            <span className="text-xs font-bold bg-gray-100 text-gray-800 px-2 py-0.5 rounded border border-gray-200">
+                              🛡️ {issue.cwe}
+                            </span>
+                          ) : null}
                         </div>
                         <p className="text-sm text-gray-600">{issue.message}</p>
                         {issue.suggestion && (

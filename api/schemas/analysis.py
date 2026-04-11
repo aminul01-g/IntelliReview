@@ -18,6 +18,8 @@ class Issue(BaseModel):
     suggestion: Optional[str] = None
     confidence: Optional[float] = None
     quick_fix: Optional[str] = None
+    cwe: Optional[str] = None
+    reference_url: Optional[str] = None
 
 class Metrics(BaseModel):
     """Code metrics schema."""

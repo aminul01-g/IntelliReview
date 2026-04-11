@@ -14,6 +14,12 @@ from config.settings import settings
 from api.routes import analysis, auth, metrics, feedback, webhooks
 from api.database import engine, Base
 
+# Ensure all models are loaded before create_all
+import api.models.user
+import api.models.analysis
+import api.models.feedback
+import api.models.audit
+
 # Create database tables
 try:
     Base.metadata.create_all(bind=engine)

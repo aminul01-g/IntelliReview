@@ -51,13 +51,13 @@ app_port: 7860
 
 ### What Makes IntelliReview Unique?
 
-- **Universal Language Support**: Analyzes code cleanly regardless of extension, falling back to Regex and ML logic when AST parsing fails.
-- **AI-Powered Integrations**: Built-in MCP Server (Model Context Protocol) allows Claude, Cursor, and other AI agents to natively run code analysis.
+- **Plan-First Architecture**: Analyzes the directory tree and configuration files first to generate a structural plan, ensuring all auto-fixes respect the project's broader architecture.
+- **Entity-Centric Entity History**: Tracks and groups analyses by "Projects" instead of loose file fragments, allowing teams to visualize overall project health and AI-inferred dependency maps.
+- **Elite AI Engines**: Powered by advanced HuggingFace endpoints (`DeepSeek-R1` for architectural logic and suggestions, `Qwen3-32B` for conceptual RAG context mapping and pattern deduction).
 - **AI Code Vulnerability Detection**: Detects common hallucinations and AI-generated code snippets (e.g. empty try-catches, fake URLs, TODO blocks).
 - **Expert SQE Format**: Generates comprehensive, professional code review reports.
 - **GitHub PR Auto-Reviewer**: Integrates seamlessly into CI/CD pipelines to review GitHub PRs using Unified Diff Scanning.
-- **Custom Rule Engine**: Enforce team-specific project rules using `.intellireview.yml`.
-- **VS Code Native Extension**: Exposes real-time AI suggestions directly in IDE squiggly lines.
+- **Universal Language Support**: Native AST parsing for Python, JavaScript, Java, C/C++, with intelligent fallback logic for all other languages.
 
 ---
 
@@ -72,10 +72,11 @@ app_port: 7860
 - **Security Scanning**: OWASP vulnerabilities, unsafe function usage, buffer overflows, SQL injection risks
 
 #### 🤖 **AI-Powered Features**
-- **Smart Suggestions**: Context-aware code improvement recommendations using LLMs
+- **Smart Suggestions (`DeepSeek-R1`)**: Context-aware code improvement and automated diff patch generation capable of highly logical refactoring.
+- **Semantic Context Mapping (`Qwen3-32B`)**: Zero-dependency context analyzer that deduces structural and imported file relationships across the workspace, feeding global context to local code edits.
 - **AI Pattern Detections**: Specialized detector identifies hallmarks of AI-generated stubs, hallucinated code, or dead placeholder logic code.
-- **Refactoring Recommendations**: Intelligent suggestions for code restructuring
-- **Pattern Learning**: Adapts to team-specific coding patterns and preferences
+- **Zero-Shot Code Smells (`DeepSeek-R1`)**: Analyzes abstract syntax patterns on the fly to detect deep-rooted "god classes" and "spaghetti logic" far beyond simplistic linters.
+- **Telemetry Pattern Learning (`Qwen3-32B`)**: Automatically ingests historical accepted/rejected AI suggestions to deduce and document human-readable team coding standards.
 
 #### 🌐 **Universal Language Support**
 - Native AST parsing for **Python, JavaScript, Java, C/C++**.
@@ -154,10 +155,10 @@ intellireview stats
 │  │  (AST/Tree)  │  │   Detectors  │  │  Generator   │         │
 │  └──────────────┘  └──────────────┘  └──────────────┘         │
 │                                                                 │
-│  • Python Parser   • Complexity      • HuggingFace API         │
-│  • JS Parser       • Security        • Code Embeddings         │
+│  • Python Parser   • CI/CD Filters   • DeepSeek-R1 (Logic)     │
+│  • JS Parser       • Security        • Qwen3-32B (Semantic)    │
 │  • Java Parser     • Anti-patterns   • Pattern Learning        │
-│  • C/C++ Parser    • Quality Checks  • Context Analysis        │
+│  • C/C++ Parser    • Unified Diffs   • Dependency Context Map  │
 └────────────────────────────────────────────────────────────────┘
                               ↓
 ┌────────────────────────────────────────────────────────────────┐
@@ -179,9 +180,9 @@ intellireview stats
 - **Async Support**: Celery + Redis (optional)
 
 **Analysis Tools:**
-- **Python**: AST, Pylint, Bandit, Radon
+- **Python**: AST, Pylint (Fatal/Error filtering), Bandit, Radon
 - **JavaScript**: Esprima
-- **AI/ML**: Hugging Face Hub, Sentence Transformers, Torch
+- **AI/ML**: Hugging Face Inference API (`DeepSeek-R1`, `Qwen3-32B`)
 
 **Databases:**
 - **PostgreSQL**: User management, authentication
@@ -578,13 +579,11 @@ intellireview/
 │       ├── complexity.py    # Complexity analysis
 │       └── duplication.py   # Duplicate code detection
 │
-├── ml_models/               # Machine learning models
+├── ml_models/               # Large Language Model Inference
 │   ├── generators/
-│   │   └── suggestion_generator.py  # AI suggestions
-│   ├── embeddings/          # Code embeddings
-│   ├── code_smell_detector.py
-│   ├── context_analyzer.py
-│   └── pattern_learner.py
+│   │   └── suggestion_generator.py  # DeepSeek-R1 Suggestions
+│   ├── code_smell_detector.py       # DeepSeek-R1 Classification
+│   └── pattern_learner.py           # Qwen3-32B Rule Inference
 │
 ├── cli/                     # Command-line interface
 │   └── cli.py              # CLI implementation
@@ -743,7 +742,8 @@ MONGO_PASSWORD=<strong-password>
 
 # AI
 HUGGINGFACE_API_KEY=<your-hf-key>
-HUGGINGFACE_MODEL=Qwen/Qwen2.5-Coder-7B-Instruct
+HUGGINGFACE_MODEL=deepseek-ai/DeepSeek-R1
+HUGGINGFACE_CONTEXT_MODEL=Qwen/Qwen3-32B
 ```
 
 ### Kubernetes Deployment

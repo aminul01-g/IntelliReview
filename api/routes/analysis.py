@@ -223,13 +223,28 @@ async def analyze_code(
 @router.get("/history", response_model=List[AnalysisResponse])
 async def get_analysis_history(
     limit: int = 10,
+    project_id: int = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get user's analysis history."""
-    analyses = db.query(Analysis).filter(
+    """Get user's analysis history.
+    
+    By default, returns only 'loose file' analyses (standalone snippets
+    that were NOT uploaded as part of a project folder).
+    Pass project_id to get analyses for a specific project instead.
+    """
+    query = db.query(Analysis).filter(
         Analysis.user_id == current_user.id
-    ).order_by(Analysis.created_at.desc()).limit(limit).all()
+    )
+    
+    if project_id is not None:
+        # Return analyses belonging to a specific project
+        query = query.filter(Analysis.project_id == project_id)
+    else:
+        # Default: return only loose files (no project association)
+        query = query.filter(Analysis.project_id.is_(None))
+    
+    analyses = query.order_by(Analysis.created_at.desc()).limit(limit).all()
     
     results = []
     for a in analyses:

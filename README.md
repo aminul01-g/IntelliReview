@@ -1,3 +1,13 @@
+---
+title: IntelliReview
+emoji: 🛡️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-ffd43b.svg)](https://python.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ed.svg)](https://docker.com)

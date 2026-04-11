@@ -29,8 +29,13 @@
       "properties": {
         "intellireview.serverUrl": {
           "type": "string",
-          "default": "http://127.0.0.1:7860/api/v1",
+          "default": "http://127.0.0.1:8000/api/v1",
           "description": "URL of the IntelliReview API Server"
+        },
+        "intellireview.apiToken": {
+          "type": "string",
+          "default": "",
+          "description": "API Token (JWT) for IntelliReview authentication. Required for cloud analysis."
         }
       }
     }

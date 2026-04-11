@@ -6,6 +6,10 @@ import requests
 from typing import Optional
 from github import Github
 import asyncio
+from dotenv import load_dotenv
+
+# Load environment variables so background tasks have API keys
+load_dotenv()
 
 # Ensure IntelliReview imports
 from api.routes.analysis import EXT_LANG_MAP, SKIP_PATTERNS

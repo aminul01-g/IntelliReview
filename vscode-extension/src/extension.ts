@@ -41,7 +41,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 async function runAnalysis(document: vscode.TextDocument) {
     const config = vscode.workspace.getConfiguration('intellireview');
-    const serverUrl = config.get<string>('serverUrl', 'http://127.0.0.1:7860/api/v1');
+    const serverUrl = config.get<string>('serverUrl', 'http://127.0.0.1:8000/api/v1');
+    const apiToken = config.get<string>('apiToken', '');
 
     const code = document.getText();
     if (!code.trim()) {
@@ -54,17 +55,24 @@ async function runAnalysis(document: vscode.TextDocument) {
     if (langId === 'javascriptreact' || langId === 'typescript' || langId === 'typescriptreact') langId = 'javascript';
     if (langId === 'cpp' || langId === 'c') langId = 'cpp';
 
+    if (!apiToken) {
+        vscode.window.showErrorMessage('IntelliReview API Token is missing. Please configure it in the extension settings.');
+        return;
+    }
+
     vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: "IntelliReview: Analyzing code...",
         cancellable: false
-    }, async (progress) => {
+    }, async (progress: any) => {
         try {
             // Call the local backend API
             const response = await axios.post(`${serverUrl}/analysis/analyze`, {
                 code: code,
                 language: langId,
                 file_path: document.fileName
+            }, {
+                headers: { "Authorization": `Bearer ${apiToken}` }
             });
 
             const data = response.data;
@@ -75,7 +83,7 @@ async function runAnalysis(document: vscode.TextDocument) {
             
             for (const issue of issues) {
                 // Line numbers are 1-indexed in our API, 0-indexed in VS Code
-                const lineNum = Math.max(0, (issue.line || 1) - 1);
+                const lineNum = Math.min(Math.max(0, (issue.line || 1) - 1), document.lineCount - 1);
                 const lineRange = document.lineAt(lineNum).range;
 
                 let severity = vscode.DiagnosticSeverity.Information;

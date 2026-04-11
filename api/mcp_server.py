@@ -23,8 +23,14 @@ import os
 import sys
 import json
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Ensure the root project directory is in the path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
+# Load environment variables
+load_dotenv(os.path.join(project_root, ".env"))
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 

@@ -256,20 +256,62 @@ class AIPatternDetector:
 
     # ─── 6. Hallucinated Constants / Magic Values ───────────────────
 
+    # RFC 2606 reserved documentation domains — these are NEVER real endpoints
+    _DOCUMENTATION_DOMAINS = frozenset([
+        'example.com', 'example.org', 'example.net',
+        'test.com', 'test.org', 'test.net',
+        'localhost', '127.0.0.1',
+    ])
+
     def _check_hallucinated_constants(self, lines: List[str]) -> List[Dict]:
-        """Detect suspicious magic numbers/strings that may be hallucinated."""
+        """Detect suspicious magic numbers/strings that may be hallucinated.
+        
+        Context-aware: skips URLs found inside comments, docstrings, 
+        print/log statements, and documentation contexts to prevent 
+        false positives on tutorial or example code.
+        """
         issues = []
-        magic_count = 0
+        in_docstring = False
+        docstring_delim = None
 
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
-            if stripped.startswith(('#', '//', '/*', '*')):
+
+            # ── Track docstring boundaries ──
+            for delim in ('"""', "'''"):
+                count = stripped.count(delim)
+                if count >= 2:
+                    pass  # Opens and closes on the same line — not inside docstring
+                elif count == 1:
+                    in_docstring = not in_docstring
+                    docstring_delim = delim if in_docstring else None
+
+            # Skip lines inside docstrings entirely
+            if in_docstring:
                 continue
 
-            # Suspicious URL patterns (common AI hallucination)
+            # Skip comment lines
+            if stripped.startswith(('#', '//', '/*', '*', '*/')):
+                continue
+
+            # Skip print / log / docstring / assertion contexts
+            if re.match(r'^\s*(print|logger\.\w+|logging\.\w+|console\.log|assert|raise)\s*\(', stripped):
+                continue
+
+            # ── Suspicious URL patterns (common AI hallucination) ──
             url_matches = re.findall(r'https?://[^\s\'"]+', stripped)
             for url in url_matches:
-                if any(word in url.lower() for word in ['example.com', 'placeholder', 'your-', 'xxx', 'changeme']):
+                url_lower = url.lower()
+
+                # Skip well-known documentation/reserved domains entirely
+                if any(domain in url_lower for domain in self._DOCUMENTATION_DOMAINS):
+                    continue
+
+                # Only flag genuinely suspicious placeholder markers
+                suspicious_markers = ['your-api', 'your-domain', 'your-server',
+                                      'xxx', 'changeme', 'placeholder',
+                                      'INSERT_', 'REPLACE_', 'TODO']
+                if any(marker.lower() in url_lower for marker in suspicious_markers):
                     issues.append({
                         "type": "ai_hallucinated",
                         "severity": "high",
@@ -278,7 +320,7 @@ class AIPatternDetector:
                         "suggestion": "Replace with actual production URL"
                     })
 
-            # Suspicious API key patterns
+            # ── Suspicious API key patterns ──
             if re.search(r'["\']sk-[a-zA-Z0-9]{20,}["\']', stripped):
                 issues.append({
                     "type": "ai_hallucinated",

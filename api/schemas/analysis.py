@@ -11,6 +11,7 @@ class AnalysisRequest(BaseModel):
 
 class Issue(BaseModel):
     """Code issue schema."""
+    id: Optional[str] = None
     type: str
     severity: str
     line: int

@@ -13,6 +13,10 @@ import {
 // Types
 interface User {
   username: string;
+  email?: string;
+  id?: number;
+  is_active?: boolean;
+  role?: string;
 }
 
 interface Issue {
@@ -112,6 +116,8 @@ interface AutoFix {
 }
 
 interface ProjectUploadResult {
+  project_id?: number;
+  plan_md?: string;
   project_summary: {
     total_files: number;
     total_lines: number;
@@ -127,10 +133,16 @@ interface ProjectUploadResult {
   errors: { file: string; error: string }[];
 }
 
-// Mock API service (replace with actual API calls)
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
+// Global session reset callback — set by the main component
+let _onSessionExpired: (() => void) | null = null;
+
 const handleApiError = async (response: Response) => {
+  if (response.status === 401 && _onSessionExpired) {
+    _onSessionExpired();
+    throw new Error('Session expired. Please login again.');
+  }
   let errorMessage = `HTTP Error ${response.status} - API Request failed.`;
   try {
     const errorData = await response.json();
@@ -161,9 +173,17 @@ const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, email, password }),
+      credentials: 'include'
     });
     if (!response.ok) await handleApiError(response);
     return await response.json();
+  },
+
+  logout: async (): Promise<void> => {
+    await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include'
+    });
   },
 
   checkAuth: async (): Promise<User> => {
@@ -300,6 +320,19 @@ const IntelliReviewDashboard = () => {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [dashboardLoading, setDashboardLoading] = useState<boolean>(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
+
+  // Register the global 401 handler
+  useEffect(() => {
+    _onSessionExpired = () => {
+      setIsAuthenticated(false);
+      setUser(null);
+      setCurrentView('login');
+      setGlobalError('Session expired. Please login again.');
+    };
+    return () => { _onSessionExpired = null; };
+  }, []);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -322,47 +355,50 @@ const IntelliReviewDashboard = () => {
   }, [isAuthenticated]);
 
   const loadAllData = async () => {
-    try {
-      const [m, t, tm, fs, h, pList] = await Promise.all([
-        api.getMetrics(),
-        api.getTrends(),
-        api.getTeamMetrics(),
-        api.getFeedbackStats(),
-        api.getHistory(),
-        api.getProjects()
-      ]);
-      setMetrics(m);
-      setTrends(t || []);
-      setTeamMetrics(tm);
-      setFeedbackStats(fs);
-      setHistory(h || []);
-      setProjects(pList || []);
-    } catch (error) {
-      console.error('Failed to load data:', error);
-    }
+    setDashboardLoading(true);
+    const results = await Promise.allSettled([
+      api.getMetrics(),
+      api.getTrends(),
+      api.getTeamMetrics(),
+      api.getFeedbackStats(),
+      api.getHistory(),
+      api.getProjects()
+    ]);
+    if (results[0].status === 'fulfilled') setMetrics(results[0].value);
+    if (results[1].status === 'fulfilled') setTrends(results[1].value || []);
+    if (results[2].status === 'fulfilled') setTeamMetrics(results[2].value);
+    if (results[3].status === 'fulfilled') setFeedbackStats(results[3].value);
+    if (results[4].status === 'fulfilled') setHistory(results[4].value || []);
+    if (results[5].status === 'fulfilled') setProjects(results[5].value || []);
+    setDashboardLoading(false);
   };
 
   const handleLogin = async (username: string, password: string) => {
     try {
+      setGlobalError(null);
       await api.login(username, password);
+      // Fetch full user object (with role) from /auth/me
+      const fullUser = await api.checkAuth();
+      setUser(fullUser);
       setIsAuthenticated(true);
-      setUser({ username });
       setCurrentView('dashboard');
     } catch (error) {
-      alert('Login failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setGlobalError('Login failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
   const handleRegister = async (username: string, email: string, password: string) => {
     try {
+      setGlobalError(null);
       await api.register(username, email, password);
-      alert('Registration successful! Please login.');
+      setGlobalError('Registration successful! Please login.');
     } catch (error) {
-      alert('Registration failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setGlobalError('Registration failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await api.logout();
     setIsAuthenticated(false);
     setUser(null);
     setCurrentView('login');
@@ -552,7 +588,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, user, on
             <User className="w-8 h-8 text-gray-400" />
             <div>
               <p className="font-medium text-sm">{user?.username || 'User'}</p>
-              <p className="text-xs text-gray-400">Project Plan</p>
+              <p className="text-xs text-gray-400 capitalize">{user?.role || 'developer'}</p>
             </div>
           </div>
         </div>
@@ -594,7 +630,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ metrics, trends }) => {
     { label: 'Total Analyses', value: metrics?.total_analyses || 0, icon: Code, color: 'bg-blue-500' },
     { label: 'This Week', value: metrics?.weekly_analyses || 0, icon: TrendingUp, color: 'bg-green-500' },
     { label: 'Technical Debt', value: `${metrics?.technical_debt_hours || 0} hrs`, icon: AlertTriangle, color: 'bg-red-500' },
-    { label: 'Health Score', value: '84%', icon: CheckCircle, color: 'bg-purple-500' }
+    { label: 'Health Score', value: metrics ? `${Math.max(0, Math.min(100, 100 - (metrics.technical_debt_hours * 2))).toFixed(0)}%` : 'N/A', icon: CheckCircle, color: 'bg-purple-500' }
   ];
 
   const languageData = metrics?.language_breakdown

@@ -29,6 +29,11 @@ from ml_models.generators.suggestion_generator import SuggestionGenerator
 
 router = APIRouter()
 
+def _generate_issue_id(issue: dict) -> str:
+    """Generate a deterministic ID for an issue so feedback telemetry is stable."""
+    raw = f"{issue.get('type', '')}:{issue.get('line', 0)}:{issue.get('message', '')}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:12]
+
 # Initialize analyzers
 parsers = {
     "python": PythonParser(),
@@ -188,6 +193,11 @@ async def analyze_code(
             "maintainability_index": metrics_data.get("maintainability_index"),
             "duplication_percentage": len(duplicates) / max(len(request.code.split('\n')), 1) * 100
         }
+
+        # Generate deterministic IDs for all issues
+        for issue in enhanced_issues:
+            if not issue.get("id"):
+                issue["id"] = _generate_issue_id(issue)
 
         # Update analysis record
         analysis.status = "completed"

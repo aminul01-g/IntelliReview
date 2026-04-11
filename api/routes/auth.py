@@ -106,6 +106,18 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
     """Get current user info."""
     return current_user
 
+@router.post("/logout")
+async def logout(response: Response):
+    """Clear the auth cookie to end the session."""
+    response.delete_cookie(
+        key="auth_token",
+        httponly=True,
+        secure=True,
+        samesite="none",
+        domain=settings.COOKIE_DOMAIN
+    )
+    return {"message": "Logged out successfully"}
+
 # ==========================================
 # Enterprise SSO / OAuth Integrations (Phase 5)
 # ==========================================

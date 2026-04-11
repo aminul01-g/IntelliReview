@@ -116,8 +116,15 @@ async def get_team_metrics(
                 if sev in severity_counts:
                     severity_counts[sev] += 1
     
+    team_name = "Unknown"
+    try:
+        if current_user.team:
+            team_name = current_user.team.name
+    except Exception:
+        pass
+    
     return {
-        "team_name": current_user.team.name if current_user.team else "Unknown",
+        "team_name": team_name,
         "total_members": len(team_members),
         "total_analyses": total_analyses,
         "issue_distribution": severity_counts

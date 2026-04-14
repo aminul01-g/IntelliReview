@@ -35,11 +35,13 @@ class AnalysisResponse(BaseModel):
     status: str
     language: str
     file_path: Optional[str] = None
+    original_code: Optional[str] = None
     issues: List[Issue]
     metrics: Metrics
     suggestions_count: int
     analyzed_at: datetime
     processing_time: Optional[float] = None
+    auto_fixes: Optional[List[Dict]] = None
     
     class Config:
         from_attributes = True

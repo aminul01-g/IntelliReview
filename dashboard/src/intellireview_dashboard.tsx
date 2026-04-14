@@ -76,6 +76,7 @@ interface AnalysisResult {
   status: string;
   language: string;
   file_path: string;
+  original_code?: string;
   metrics: {
     lines_of_code: number;
     complexity: number;
@@ -85,6 +86,7 @@ interface AnalysisResult {
   issues: Issue[];
   processing_time?: number;
   analyzed_at: string;
+  auto_fixes?: AutoFix[];
 }
 
 interface LoginResponse {
@@ -280,11 +282,11 @@ const api = {
     return await response.json();
   },
 
-  customRules: async (code: string, language: string, rules: any[]): Promise<any> => {
+  customRules: async (code: string, language: string, rules_yaml: string): Promise<any> => {
     const response = await fetch(`${API_BASE_URL}/analysis/custom-rules`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, language, rules }),
+      body: JSON.stringify({ code, language, rules_yaml, rules: [] }),
       credentials: 'include'
     });
     if (!response.ok) await handleApiError(response);
@@ -763,6 +765,15 @@ const AnalyzeView: React.FC<AnalyzeViewProps> = ({ onAnalyze, result }) => {
     critical: true, high: true, medium: false, low: false, info: false
   });
 
+  useEffect(() => {
+    if (result && result.original_code) {
+      setCode(result.original_code);
+      if (result.language) {
+        setLanguage(result.language);
+      }
+    }
+  }, [result]);
+
   const handleAnalyze = async () => {
     if (!code.trim()) { alert('Please enter some code to analyze'); return; }
     setAnalyzing(true);
@@ -894,6 +905,42 @@ const AnalyzeView: React.FC<AnalyzeViewProps> = ({ onAnalyze, result }) => {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* AI Auto-Fixes */}
+          {result.auto_fixes && result.auto_fixes.length > 0 && (
+            <div className="bg-white rounded-xl shadow-lg border-2 border-green-200 overflow-hidden mb-6">
+              <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4">
+                <div className="flex items-center space-x-3">
+                  <div className="bg-white/20 p-2 rounded-lg backdrop-blur-sm">
+                     <Code className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">AI Auto-Fixes Generated</h3>
+                    <p className="text-green-100 text-xs font-medium">Auto-remediation created ready-to-test diff patches for critical vulnerabilities.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 space-y-6">
+                {result.auto_fixes.map((fix, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                      <span className="font-mono text-sm font-bold text-gray-700">{fix.filename}</span>
+                      <span className="text-xs font-bold bg-green-100 text-green-800 px-2 py-0.5 rounded-full border border-green-200 shadow-sm">
+                        Fixed {fix.issues_addressed} issues
+                      </span>
+                    </div>
+                    <div className="bg-slate-900 p-4 overflow-x-auto text-sm text-gray-300 font-mono">
+                      {fix.diff.split('\n').map((line, i) => (
+                        <div key={i} className={`whitespace-pre ${line.startsWith('+') ? 'text-green-400 bg-green-900/30 w-full px-1' : line.startsWith('-') ? 'text-red-400 bg-red-900/30 w-full px-1' : 'px-1'}`}>
+                          {line || ' '}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -1321,24 +1368,38 @@ const DiffReviewView: React.FC = () => {
 const CustomRulesView: React.FC = () => {
   const [code, setCode] = useState('');
   const [language, setLanguage] = useState('python');
-  const [rulesJson, setRulesJson] = useState(`[
-  {
-    "id": "no-print",
-    "pattern": "print\\\\(",
-    "message": "Use logging instead of print()",
-    "severity": "medium",
-    "languages": ["python"]
-  },
-  {
-    "id": "no-eval",
-    "pattern": "eval\\\\(",
-    "message": "Never use eval() — security risk",
-    "severity": "critical"
-  }
-]`);
+  const [rulesYaml, setRulesYaml] = useState(`rules:
+  - id: "no-print"
+    pattern: 'print\\\\('
+    message: "Use logging instead of print()"
+    severity: "medium"
+    languages: ["python"]
+
+  - id: "no-eval"
+    pattern: 'eval\\\\('
+    message: "Never use eval() — security risk"
+    severity: "critical"`);
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const exts: Record<string, string> = {
+      'py': 'python', 'js': 'javascript', 'ts': 'javascript', 'java': 'java', 'cpp': 'cpp', 'c': 'c'
+    };
+    if (ext && exts[ext]) setLanguage(exts[ext]);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setCode(event.target?.result as string);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   const handleRun = async () => {
     if (!code.trim()) return;
@@ -1346,8 +1407,7 @@ const CustomRulesView: React.FC = () => {
     setError(null);
     setResult(null);
     try {
-      const rules = JSON.parse(rulesJson);
-      const res = await api.customRules(code, language, rules);
+      const res = await api.customRules(code, language, rulesYaml);
       setResult(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Custom rules evaluation failed');
@@ -1366,16 +1426,30 @@ const CustomRulesView: React.FC = () => {
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-semibold text-gray-700">Code to Test</label>
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                className="text-xs border border-gray-300 rounded px-2 py-1"
-              >
-                <option value="python">Python</option>
-                <option value="javascript">JavaScript</option>
-                <option value="java">Java</option>
-                <option value="cpp">C/C++</option>
-              </select>
+              <div className="flex items-center space-x-2">
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  className="text-xs border border-gray-300 rounded px-2 py-1"
+                >
+                  <option value="python">Python</option>
+                  <option value="javascript">JavaScript</option>
+                  <option value="java">Java</option>
+                  <option value="cpp">C/C++</option>
+                </select>
+                <div className="relative overflow-hidden inline-block">
+                  <button type="button" className="text-xs bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-700 px-2 py-1 rounded flex items-center transition-colors">
+                    <svg className="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                    Upload File
+                  </button>
+                  <input 
+                    type="file" 
+                    onChange={handleFileUpload} 
+                    className="absolute top-0 left-0 hover:cursor-pointer w-full h-full opacity-0" 
+                    title="Upload File"
+                  />
+                </div>
+              </div>
             </div>
             <textarea
               value={code}
@@ -1385,13 +1459,14 @@ const CustomRulesView: React.FC = () => {
             />
           </div>
 
-          {/* Right: Rules JSON */}
+          {/* Right: Rules YAML */}
           <div>
-            <label className="text-sm font-semibold text-gray-700 block mb-2">Rules (JSON Array)</label>
+            <label className="text-sm font-semibold text-gray-700 block mb-2">Rules Config (.intellireview.yml)</label>
             <textarea
-              value={rulesJson}
-              onChange={(e) => setRulesJson(e.target.value)}
-              className="w-full h-64 font-mono text-sm border border-gray-300 rounded-lg p-4 bg-gray-50 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-y"
+              value={rulesYaml}
+              onChange={(e) => setRulesYaml(e.target.value)}
+              className="w-full h-64 font-mono text-sm border border-gray-300 rounded-lg p-4 bg-gray-900 text-green-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-y whitespace-pre"
+              spellCheck={false}
             />
           </div>
         </div>

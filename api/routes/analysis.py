@@ -83,6 +83,7 @@ async def analyze_code(
         file_path=request.file_path or "unknown",
         language=request.language,
         code_hash=code_hash,
+        original_code=request.code,
         status="pending"
     )
     
@@ -186,6 +187,28 @@ async def analyze_code(
             }
             enhanced_issues = [overview_issue] + enhanced_issues
 
+        # === AUTO-FIX: Generate unified diff patches for files with critical/high issues ===
+        auto_fixes = []
+        try:
+            critical_count = sum(1 for i in enhanced_issues if i.get("severity") in ["critical", "high"])
+            if critical_count > 0:
+                fix_patch = await suggestion_generator.generate_auto_fix_async(
+                    code=request.code,
+                    issues=enhanced_issues,
+                    language=request.language,
+                    filename=request.file_path or "unknown",
+                    plan_md=None
+                )
+                if fix_patch and fix_patch.get("diff"):
+                    auto_fixes.append(fix_patch)
+        except Exception as e:
+            logger.warning(f"Auto-fix generation failed: {e}")
+
+        # Generate deterministic IDs for all issues
+        for issue in enhanced_issues:
+            if not issue.get("id"):
+                issue["id"] = _generate_issue_id(issue)
+
         # Update analysis record
         metrics_dict = {
             "lines_of_code": metrics_data.get("lines_of_code", len(request.code.split('\n'))),
@@ -194,12 +217,6 @@ async def analyze_code(
             "duplication_percentage": len(duplicates) / max(len(request.code.split('\n')), 1) * 100
         }
 
-        # Generate deterministic IDs for all issues
-        for issue in enhanced_issues:
-            if not issue.get("id"):
-                issue["id"] = _generate_issue_id(issue)
-
-        # Update analysis record
         analysis.status = "completed"
         analysis.completed_at = datetime.utcnow()
         analysis.issues = enhanced_issues
@@ -216,7 +233,8 @@ async def analyze_code(
             metrics=Metrics(**metrics_dict),
             suggestions_count=len(enhanced_issues),
             analyzed_at=analysis.completed_at,
-            processing_time=round(time.time() - start_time, 2)
+            processing_time=round(time.time() - start_time, 2),
+            auto_fixes=auto_fixes
         )
     
     except Exception as e:
@@ -533,6 +551,7 @@ async def analyze_uploaded_files(
                 file_path=fname,
                 language=lang,
                 code_hash=code_hash,
+                original_code=code,
                 status="completed",
                 issues=all_issues,
                 metrics=metrics_dict,
@@ -773,7 +792,8 @@ class CustomRulesRequest(BaseModel):
     code: str
     language: str
     filename: str = "unknown"
-    rules: List[dict]  # List of rule definitions
+    rules: Optional[List[dict]] = None  # List of rule definitions
+    rules_yaml: Optional[str] = None    # Raw YAML string from custom rules editor
 
 @router.post("/custom-rules")
 async def run_custom_rules(
@@ -785,13 +805,24 @@ async def run_custom_rules(
     Accepts a list of rule definitions and evaluates them against the
     provided code. Useful for enforcing team-specific conventions.
     """
-    engine = CustomRuleEngine(rules=request.rules)
+    if request.rules_yaml:
+        import yaml
+        from fastapi import HTTPException, status
+        try:
+            data = yaml.safe_load(request.rules_yaml) or {}
+            parsed_rules = data.get("rules", []) if isinstance(data, dict) else data
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid YAML format: {str(e)}")
+    else:
+        parsed_rules = request.rules or []
+
+    engine = CustomRuleEngine(rules=parsed_rules)
     issues = engine.evaluate(request.code, request.filename, request.language)
 
     return {
         "filename": request.filename,
         "language": request.language,
-        "rules_evaluated": len(request.rules),
+        "rules_evaluated": len(parsed_rules),
         "issues_found": len(issues),
         "issues": issues,
     }

@@ -50,6 +50,12 @@ class SuggestionGenerator:
             
         else:
             raise ValueError(f"Unknown provider: {provider}")
+            
+    @staticmethod
+    def _strip_think_block(text: str) -> str:
+        """Strip <think>...</think> reasoning blocks often produced by DeepSeek models."""
+        import re
+        return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
     
     def generate_suggestion(
         self,
@@ -74,7 +80,7 @@ class SuggestionGenerator:
             import re
             
             # Clean up the response to extract JSON
-            clean_res = response.strip()
+            clean_res = self._strip_think_block(response)
             if clean_res.startswith("```json"):
                 clean_res = clean_res[7:]
             if clean_res.endswith("```"):
@@ -87,7 +93,7 @@ class SuggestionGenerator:
                 confidence = float(data.get('confidence_score', 0.5))
             except json.JSONDecodeError:
                 # Fallback if AI didn't return valid JSON
-                suggestion = response
+                suggestion = clean_res
                 confidence = 0.5
             
             return {
@@ -279,7 +285,7 @@ Keep the entire review concise and professional (under 600 words)."""
                 response = self._call_openai(prompt)
             else:
                 response = self._call_anthropic(prompt)
-            return response
+            return self._strip_think_block(response)
         except Exception as e:
             return f"⚠️ AI Review unavailable: {str(e)}"
     
@@ -411,7 +417,7 @@ Keep the entire review under 800 words. Be specific, cite file names and line nu
                 response = self._call_openai(prompt)
             else:
                 response = self._call_anthropic(prompt)
-            return response
+            return self._strip_think_block(response)
         except Exception as e:
             return f"⚠️ Project AI Review unavailable: {str(e)}"
     
@@ -438,7 +444,7 @@ Keep the entire review under 800 words. Be specific, cite file names and line nu
             import json
             import re
             
-            clean_res = response.strip()
+            clean_res = self._strip_think_block(response)
             if clean_res.startswith("```json"):
                 clean_res = clean_res[7:]
             if clean_res.endswith("```"):
@@ -450,7 +456,7 @@ Keep the entire review under 800 words. Be specific, cite file names and line nu
                 suggestion = f"**Problem:** {data.get('explanation', '')}\n\n**Fix:**\n```diff\n{data.get('diff', '')}\n```"
                 confidence = float(data.get('confidence_score', 0.5))
             except json.JSONDecodeError:
-                suggestion = response
+                suggestion = clean_res
                 confidence = 0.5
             
             return {
@@ -561,7 +567,7 @@ Rules:
             
             return {
                 "filename": filename,
-                "diff": response.strip(),
+                "diff": self._strip_think_block(response),
                 "issues_addressed": len(issues[:5]),
                 "status": "generated"
             }

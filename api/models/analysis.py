@@ -16,6 +16,7 @@ class Analysis(Base):
     status = Column(String(20), default="pending")  # pending, completed, failed
     issues = Column(JSON, nullable=True)
     metrics = Column(JSON, nullable=True)
+    original_code = Column(Text, nullable=True)
     processing_time = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))

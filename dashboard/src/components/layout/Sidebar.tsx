@@ -1,12 +1,12 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, History, FileCode2, Code2, Settings } from 'lucide-react'
+import { LayoutDashboard, History, FileCode, Code, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { name: 'Dashboard', to: '/', icon: LayoutDashboard },
-  { name: 'Review Engine', to: '/review', icon: FileCode2 },
-  { name: 'Rules Studio', to: '/rules', icon: Code2 },
+  { name: 'Review Engine', to: '/review', icon: FileCode },
+  { name: 'Rules Studio', to: '/rules', icon: Code },
   { name: 'Scan History', to: '/history', icon: History },
 ]
 
@@ -26,7 +26,7 @@ export function Sidebar() {
           <NavLink
             key={item.to}
             to={item.to}
-            className={({ isActive }) =>
+            className={({ isActive }: any) =>
               cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
                 isActive 

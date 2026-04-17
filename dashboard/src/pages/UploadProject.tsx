@@ -1,24 +1,26 @@
 import React, { useState, useRef } from 'react'
-import { UploadCloud, FileType, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react'
+import { Upload, FileText, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react'
+import { api } from '@/lib/api'
 
 export function UploadProject() {
   const [isDragging, setIsDragging] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [pollMessage, setPollMessage] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: any) => {
     e.preventDefault()
     setIsDragging(true)
   }
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = (e: any) => {
     e.preventDefault()
     setIsDragging(false)
   }
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: any) => {
     e.preventDefault()
     setIsDragging(false)
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -32,16 +34,56 @@ export function UploadProject() {
     }
   }
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (files.length === 0) return
     setIsUploading(true)
     setUploadStatus('idle')
+    setPollMessage('Uploading files to server...')
     
-    // Mock processing logic
-    setTimeout(() => {
+    try {
+      const formData = new FormData()
+      files.forEach(file => {
+        // FastAPI reads the original relative path structure automatically if available
+        formData.append('files', file)
+      })
+
+      const response = await api.post('/analysis/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      
+      const taskId = response.data.task_id
+      setPollMessage('Upload complete. Task queued in Celery...')
+      
+      const pollInterval = window.setInterval(async () => {
+        try {
+          const statusRes = await api.get(`/analysis/upload/status/${taskId}`)
+          const state = statusRes.data.status
+          setPollMessage(statusRes.data.info || `Processing: ${state}`)
+          
+          if (state === 'SUCCESS') {
+            window.clearInterval(pollInterval)
+            setIsUploading(false)
+            setUploadStatus('success')
+            setPollMessage('Scan Complete!')
+          } else if (state === 'FAILURE' || state === 'REVOKED') {
+            window.clearInterval(pollInterval)
+            setIsUploading(false)
+            setUploadStatus('error')
+            setPollMessage(statusRes.data.error || 'Task encountered a failure.')
+          }
+        } catch (pollErr) {
+            window.clearInterval(pollInterval)
+            setIsUploading(false)
+            setUploadStatus('error')
+            setPollMessage('Error polling status from server.')
+        }
+      }, 2000)
+
+    } catch (err: any) {
       setIsUploading(false)
-      setUploadStatus('success')
-    }, 2500)
+      setUploadStatus('error')
+      setPollMessage(err.response?.data?.detail || err.message || 'Upload failed')
+    }
   }
 
   return (
@@ -63,7 +105,7 @@ export function UploadProject() {
 
         <div className="flex flex-col items-center justify-center text-center space-y-6 relative z-10">
           <div className={`h-24 w-24 rounded-full flex items-center justify-center transition-all duration-500 ${isDragging ? 'bg-primary/20 scale-110' : 'bg-muted'}`}>
-            <UploadCloud className={`h-12 w-12 transition-colors duration-500 ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
+            <Upload className={`h-12 w-12 transition-colors duration-500 ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
           </div>
           
           <div className="space-y-2">
@@ -82,14 +124,13 @@ export function UploadProject() {
             Browse Files
           </button>
           
-          {/* @ts-ignore - webkitdirectory property exists on inputs but lacks react types */}
           <input 
             type="file" 
             className="hidden" 
-            ref={fileInputRef} 
+            ref={fileInputRef as any} 
             onChange={handleFileInput} 
             multiple 
-            webkitdirectory="true" 
+            {...({ webkitdirectory: "true" } as any)} 
           />
         </div>
       </div>
@@ -98,7 +139,7 @@ export function UploadProject() {
         <div className="bg-card border border-border rounded-xl p-6 shadow-sm space-y-4">
            <div className="flex items-center justify-between">
              <div className="flex items-center gap-2 font-medium">
-               <FileType className="h-5 w-5 text-primary" />
+               <FileText className="h-5 w-5 text-primary" />
                <span>Ready for Analysis ({files.length} items)</span>
              </div>
              {uploadStatus === 'success' ? (
@@ -111,6 +152,13 @@ export function UploadProject() {
                 </div>
              ) : null}
            </div>
+           
+           {(isUploading || uploadStatus !== 'idle') && pollMessage && (
+             <div className="text-sm font-medium text-muted-foreground bg-muted/30 py-2 px-3 rounded-md flex items-center gap-2">
+               {isUploading && <RefreshCw className="h-4 w-4 animate-spin text-primary" />}
+               <span>{pollMessage}</span>
+             </div>
+           )}
            
            <div className="h-32 overflow-y-auto border border-border rounded-md bg-muted/20 p-2 custom-scrollbar">
              {files.slice(0, 100).map((file, idx) => (
@@ -127,7 +175,7 @@ export function UploadProject() {
 
            <div className="flex justify-end gap-3 pt-2">
              <button 
-               onClick={() => { setFiles([]); setUploadStatus('idle'); }}
+               onClick={() => { setFiles([]); setUploadStatus('idle'); setPollMessage(''); }}
                disabled={isUploading}
                className="h-10 px-4 py-2 text-sm font-medium border border-border rounded-md text-foreground bg-transparent hover:bg-muted/50 transition-colors disabled:opacity-50"
              >
@@ -141,7 +189,7 @@ export function UploadProject() {
                {isUploading ? (
                  <>
                    <RefreshCw className="h-4 w-4 animate-spin" />
-                   Initializing Multi-Agent Scan...
+                   Processing...
                  </>
                ) : uploadStatus === 'success' ? (
                  'Redirecting to History...'
@@ -155,3 +203,4 @@ export function UploadProject() {
     </div>
   )
 }
+

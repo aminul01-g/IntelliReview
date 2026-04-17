@@ -9,6 +9,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from api.middleware.resilience import LLMResilienceMiddleware
 
 from config.settings import settings
 from api.routes import analysis, auth, metrics, feedback, webhooks, history, oauth_device, review_feedback, policies
@@ -59,16 +60,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
+# LLM Resilience middleware — translates upstream 429/503/504 into structured errors
+app.add_middleware(LLMResilienceMiddleware)
+
+from api.auth import get_current_user
+
+# Include public routers
 app.include_router(auth.router, prefix=f"{settings.API_PREFIX}/auth", tags=["Authentication"])
-app.include_router(analysis.router, prefix=f"{settings.API_PREFIX}/analysis", tags=["Analysis"])
-app.include_router(metrics.router, prefix=f"{settings.API_PREFIX}/metrics", tags=["Metrics"])
-app.include_router(feedback.router, prefix=f"{settings.API_PREFIX}/feedback", tags=["Feedback"])
 app.include_router(webhooks.router, prefix=f"{settings.API_PREFIX}/webhooks", tags=["Webhooks"])
-app.include_router(history.router, prefix=f"{settings.API_PREFIX}/history", tags=["History"])
 app.include_router(oauth_device.router, prefix=f"{settings.API_PREFIX}/oauth", tags=["OAuth Device Flow"])
-app.include_router(review_feedback.router, prefix=f"{settings.API_PREFIX}/review-feedback", tags=["Review Feedback"])
-app.include_router(policies.router, prefix=f"{settings.API_PREFIX}/policies", tags=["Policies"])
+
+# Include protected routers
+protected_dependencies = [Depends(get_current_user)]
+app.include_router(analysis.router, prefix=f"{settings.API_PREFIX}/analysis", tags=["Analysis"], dependencies=protected_dependencies)
+app.include_router(metrics.router, prefix=f"{settings.API_PREFIX}/metrics", tags=["Metrics"], dependencies=protected_dependencies)
+app.include_router(feedback.router, prefix=f"{settings.API_PREFIX}/feedback", tags=["Feedback"], dependencies=protected_dependencies)
+app.include_router(history.router, prefix=f"{settings.API_PREFIX}/history", tags=["History"], dependencies=protected_dependencies)
+app.include_router(review_feedback.router, prefix=f"{settings.API_PREFIX}/review-feedback", tags=["Review Feedback"], dependencies=protected_dependencies)
+app.include_router(policies.router, prefix=f"{settings.API_PREFIX}/policies", tags=["Policies"], dependencies=protected_dependencies)
 
 @app.get("/health")
 @limiter.limit("60/minute")

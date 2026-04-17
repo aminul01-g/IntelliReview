@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
-import { FileCode, Play, AlertCircle, CheckCircle, ShieldAlert, Check, X } from 'lucide-react'
+import * as Lucide from 'lucide-react'
+
+const { FileCode, Play, AlertCircle, CheckCircle, ShieldAlert, Check, X } = Lucide as any
 import { useSubmitAnalysis, useAnalysisTaskStatus } from '@/hooks/useAnalysisTask'
 import { useTelemetryFeedback } from '@/hooks/useTelemetryFeedback'
 

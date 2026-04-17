@@ -10,7 +10,7 @@ export function Login() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const { login } = useAuth()
+  const { login, register } = useAuth() as any
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -18,18 +18,15 @@ export function Login() {
     setIsLoading(true)
     setError('')
     try {
-      // For now, mock the login process with the existing context functionality
-      // In production this would hit real endpoints, but we use the context's mocked login
       if (isRegister) {
-        // Mock register logic -> just log them in
-        login()
+        await register(username, email, password)
         navigate('/')
       } else {
-        login()
+        await login(username, password)
         navigate('/')
       }
     } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please try again.')
+      setError(err.response?.data?.detail || err.message || 'Authentication failed. Please try again.')
     } finally {
       setIsLoading(false)
     }

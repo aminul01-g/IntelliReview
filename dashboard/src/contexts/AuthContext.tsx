@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { api } from '@/lib/api';
+import * as React from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { api } from '@/lib/api'
 
 export type UserRole = 'Developer' | 'Reviewer' | 'Admin';
 
@@ -14,7 +15,8 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: () => void;
+  login: (username: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -24,20 +26,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        // Assume this endpoint returns the authenticated user based on the HttpOnly cookie
-        const { data } = await api.get<User>('/auth/me');
-        setUser(data);
-      } catch (error) {
-        // Not authenticated
-        setUser(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const fetchUser = async () => {
+    try {
+      const { data } = await (api as any).get('/auth/me');
+      setUser(data);
+    } catch (error) {
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchUser();
 
     const handleUnauthorized = () => {
@@ -48,9 +48,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
   }, []);
 
-  const login = () => {
-    // Mock login for verification purposes
-    setUser({ id: '1', email: 'dev@intellireview.tech', name: 'Mock User', role: 'Admin' });
+  const login = async (username: string, password: string) => {
+    const params = new URLSearchParams();
+    params.append('username', username);
+    params.append('password', password);
+    
+    await api.post('/auth/login', params, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+    
+    // Cookie is now set, fetch user to populate Context
+    await fetchUser();
+  };
+
+  const register = async (username: string, email: string, password: string) => {
+    await api.post('/auth/register', { username, email, password });
+    // Automatically log in the user after registration
+    await login(username, password);
   };
 
   const logout = async () => {
@@ -67,6 +81,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       isAuthenticated: !!user,
       isLoading,
       login,
+      register,
       logout
     }}>
       {children}

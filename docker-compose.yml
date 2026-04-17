@@ -108,33 +108,34 @@ services:
       - intellireview_network
     restart: unless-stopped
 
-  # Celery Worker (Disabled: Module api.celery_app missing and unused)
-  # celery_worker:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: intellireview_celery
-  #   command: celery -A api.celery_app worker --loglevel=info
-  #   environment:
-  #     - POSTGRES_USER=intellireview
-  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
-  #     - POSTGRES_HOST=postgres
-  #     - POSTGRES_PORT=5432
-  #     - POSTGRES_DB=intellireview_db
-  #     - MONGODB_URL=mongodb://admin:${MONGO_PASSWORD:-password}@mongodb:27017
-  #     - REDIS_HOST=redis
-  #     - REDIS_PORT=6379
-  #     - CELERY_BROKER_URL=redis://redis:6379/0
-  #     - CELERY_RESULT_BACKEND=redis://redis:6379/0
-  #   volumes:
-  #     - ./:/app
-  #   depends_on:
-  #     - redis
-  #     - postgres
-  #     - mongodb
-  #   networks:
-  #     - intellireview_network
-  #   restart: unless-stopped
+  # Celery Worker
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: intellireview_celery
+    command: celery -A api.celery_app worker --loglevel=info
+    environment:
+      - POSTGRES_USER=intellireview
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=intellireview_db
+      - MONGODB_URL=mongodb://admin:${MONGO_PASSWORD:-password}@mongodb:27017
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+    volumes:
+      - ./:/app
+    depends_on:
+      - redis
+      - postgres
+      - mongodb
+    networks:
+      - intellireview_network
+    restart: unless-stopped
 
   # Analysis History Service (Go + GraphQL + TimescaleDB aggregation)
   analysis-history:

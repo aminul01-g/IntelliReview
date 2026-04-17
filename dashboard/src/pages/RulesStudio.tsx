@@ -1,8 +1,10 @@
 import React, { useState } from 'react'
 import Editor from '@monaco-editor/react'
-import { Play } from 'lucide-react'
+import * as Lucide from 'lucide-react'
 import { api } from '@/lib/api'
 import { useMutation } from '@tanstack/react-query'
+
+const { Play } = Lucide as any
 
 const DEFAULT_RULE = `id: custom-sql-injection
 message: "Direct SQL execution"
@@ -58,7 +60,7 @@ export function RulesStudio() {
                   defaultLanguage="yaml"
                   theme="vs-dark"
                   value={ruleCode}
-                  onChange={(val) => setRuleCode(val || '')}
+                  onChange={(val: string | undefined) => setRuleCode(val || '')}
                   options={{
                     minimap: { enabled: false },
                     fontSize: 13,
@@ -80,7 +82,7 @@ export function RulesStudio() {
                       defaultLanguage="python"
                       theme="vs-dark"
                       value={testCode}
-                      onChange={(val) => setTestCode(val || '')}
+                      onChange={(val: string | undefined) => setTestCode(val || '')}
                       options={{
                         minimap: { enabled: false },
                         fontSize: 13,

@@ -17,6 +17,8 @@ redis>=5.0.1
 huggingface_hub>=0.24.1
 httpx>=0.27.0
 slowapi
+celery>=5.3.6
+redis>=5.0.1
 
 # Code Analysis
 pylint>=3.0.3

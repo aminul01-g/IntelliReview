@@ -363,308 +363,51 @@ SKIP_PATTERNS = {
 @router.post("/upload")
 async def analyze_uploaded_files(
     request: Request,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user)
 ):
-    """Analyze uploaded files or folders. Accepts multiple files via multipart upload."""
+    """Analyze uploaded files asynchronously via Celery."""
     import os
-    import asyncio
+    import uuid
+    from api.tasks.analysis_tasks import process_upload_task
     
-    # Safely parse the form data directly to avoid FastAPI 400 Pydantic errors on large multipart requests
     try:
         form_data = await request.form()
         files = form_data.getlist("files")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse multipart form data: {str(e)}")
+        
+    task_id = str(uuid.uuid4())
+    task_dir = os.path.join("scratch", "uploads", task_id)
+    os.makedirs(task_dir, exist_ok=True)
     
-    start_time = time.time()
-    results = []
-    skipped = []
-    errors = []
-    
-    # Aggressively ignore common large binary or non-code directories
-    COMMON_IGNORES = [
-        "node_modules", ".git", ".venv", "venv", "__pycache__", "build", "dist",
-        ".next", ".nuxt", "coverage", "vendor"
-    ]
-    
-    # Filter and process files
-    valid_files = []
     for f in files:
         filename = f.filename or "unknown"
-        
-        # Skip binary/non-code files and ignored directories
-        path_parts = filename.replace("\\", "/").split("/")
-        if any(part.startswith(".") for part in path_parts if part != ".") or any(part in COMMON_IGNORES for part in path_parts) or any(part in SKIP_PATTERNS for part in path_parts):
-            skipped.append({"file": filename, "reason": "Ignored folder or dotfile"})
-            continue
-        
-        ext = os.path.splitext(filename)[1].lower()
-        # Binary file extensions to skip aggressively
-        if ext in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mp3", ".wav", ".zip", ".tar", ".gz", ".rar", ".pdf", ".exe", ".dll", ".so", ".dylib", ".class", ".pyc"]:
-            skipped.append({"file": filename, "reason": f"Binary/Unsupported extension: {ext}"})
-            continue
+        content = await f.read()
+        file_path = os.path.join(task_dir, filename)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "wb") as out:
+            out.write(content)
+            
+    # Enqueue task
+    task = process_upload_task.apply_async(args=[task_id, current_user.id], task_id=task_id)
+    
+    return {"task_id": task.id, "status": "processing"}
 
-        lang = EXT_LANG_MAP.get(ext, "unknown")
-        
-        # Read file content
-        try:
-            content = (await f.read()).decode('utf-8', errors='replace')
-        except Exception as e:
-            errors.append({"file": filename, "error": f"Could not read file: {str(e)}"})
-            continue
-        
-        # Skip empty files or very large files
-        line_count = len(content.split('\n'))
-        if line_count == 0:
-            skipped.append({"file": filename, "reason": "Empty file"})
-            continue
-        if line_count > 10000:
-            skipped.append({"file": filename, "reason": f"Too large ({line_count} lines, max 10,000)"})
-            continue
-        
-        valid_files.append({"filename": filename, "content": content, "language": lang, "lines": line_count})
+@router.get("/upload/status/{task_id}")
+async def get_upload_status(task_id: str):
+    """Poll Celery task status."""
+    from api.celery_app import celery_app
+    task_result = celery_app.AsyncResult(task_id)
     
-    if not valid_files:
-        return {
-            "project_summary": {
-                "total_files": 0,
-                "total_issues": 0,
-                "processing_time": round(time.time() - start_time, 2),
-            },
-            "file_results": [],
-            "skipped": skipped,
-            "errors": errors,
-        }
-        
-    # === PLAN-FIRST PROTOCOL: Phase 1 & 2 ===
-    project_name = "Uploaded Project"
-    config_contents = ""
-    dir_tree_list = []
-    
-    for f in valid_files:
-        fname = f["filename"]
-        dir_tree_list.append(fname)
-        
-        if "/" in fname and project_name == "Uploaded Project":
-            project_name = fname.split("/")[0]
-            
-        base = os.path.basename(fname).lower()
-        if base in ["package.json", "requirements.txt", "readme.md", "setup.py", "pom.xml", "dockerfile"]:
-            config_contents += f"\n--- {base} ---\n{f['content'][:1500]}\n"
-            
-    dir_tree_str = "\n".join(dir_tree_list)
-    
-    # 2. Strategic Planning via SuggestionGenerator
-    plan_md = None
-    try:
-        plan_md = await suggestion_generator.generate_project_plan_async(
-            config_files_content=config_contents,
-            directory_tree=dir_tree_str
-        )
-    except Exception as e:
-        logger.error(f"Plan generation failed: {e}")
-        plan_md = f"# IntelliReview Plan\nError generating plan: {e}"
-        
-    # 3. Create persistent Project Entity in DB
-    project_record = None
-    try:
-        import hashlib
-        folder_hash = hashlib.sha256(("".join(dir_tree_list)).encode()).hexdigest()
-        project_record = Project(
-            user_id=current_user.id,
-            name=project_name,
-            folder_hash=folder_hash,
-            plan_md=plan_md
-        )
-        db.add(project_record)
-        db.commit()
-        db.refresh(project_record)
-    except Exception as e:
-        logger.error(f"Failed to create project record: {e}")
-        db.rollback()
-    
-    # === RAG CONTEXT: Index all project files for cross-file awareness ===
-    try:
-        project_context_builder.index_project(valid_files)
-        logger.info(f"RAG context indexed {len(valid_files)} files for cross-file analysis")
-    except Exception as e:
-        logger.warning(f"RAG context indexing failed (continuing without context): {e}")
-    
-    # Analyze each file
-    for file_info in valid_files:
-        try:
-            code = file_info["content"]
-            lang = file_info["language"]
-            fname = file_info["filename"]
-            
-            # Parse (fallback to empty dict if no AST parser exists for language)
-            parser = parsers.get(lang)
-            ast = parser.parse(code, fname) if parser else {}
-            
-            # Run static analysis
-            metrics_data = complexity_analyzer.analyze(code, lang)
-            duplicates = duplication_detector.detect(code)
-            antipatterns = antipattern_detector.detect(code, ast, lang)
-            security_issues = security_scanner.scan(code, fname, lang)
-            quality_issues = quality_detector.detect(code, fname, lang)
-            
-            ai_patterns = ai_pattern_detector.detect(code, fname, lang)
-            
-            # === RAG CONTEXT: Build cross-file context for this specific file ===
-            file_idx = next((i for i, f in enumerate(valid_files) if f["filename"] == fname), None)
-            cross_file_context = None
-            if file_idx is not None:
-                try:
-                    cross_file_context = project_context_builder.build_context_string(file_idx, top_k=3)
-                except Exception:
-                    pass
-            
-            all_issues = antipatterns + security_issues + quality_issues + ai_patterns
-            for dup in duplicates:
-                all_issues.append({
-                    "type": "code_duplication",
-                    "severity": "medium",
-                    "line": dup["block1_start"],
-                    "message": f"Duplicate code found (similarity: {dup['similarity']})",
-                    "suggestion": "Consider extracting duplicated code into a reusable function"
-                })
-            
-            # Count by severity
-            severity_counts = {}
-            for issue in all_issues:
-                sev = issue.get("severity", "info")
-                severity_counts[sev] = severity_counts.get(sev, 0) + 1
-            
-            metrics_dict = {
-                "lines_of_code": metrics_data.get("lines_of_code", file_info["lines"]),
-                "complexity": metrics_data.get("average_complexity"),
-                "maintainability_index": metrics_data.get("maintainability_index"),
-                "duplication_percentage": round(len(duplicates) / max(file_info["lines"], 1) * 100, 1)
-            }
-            
-            # Save to DB
-            code_hash = hashlib.sha256(code.encode()).hexdigest()
-            analysis = Analysis(
-                user_id=current_user.id,
-                project_id=project_record.id if project_record else None,
-                file_path=fname,
-                language=lang,
-                code_hash=code_hash,
-                original_code=code,
-                status="completed",
-                issues=all_issues,
-                metrics=metrics_dict,
-                processing_time=round(time.time() - start_time, 2),
-                completed_at=datetime.utcnow()
-            )
-            db.add(analysis)
-            db.commit()
-            db.refresh(analysis)
-            
-            results.append({
-                "analysis_id": analysis.id,
-                "file_path": fname,
-                "language": lang,
-                "metrics": metrics_dict,
-                "issue_count": len(all_issues),
-                "severity_counts": severity_counts,
-                "issues": all_issues[:10],  # Return top 10 issues per file to avoid huge payloads
-                "related_files": [r["filename"] for r in (project_context_builder.get_related_files(file_idx, top_k=3) if file_idx is not None else [])],
-                "status": "completed"
-            })
-        
-        except Exception as e:
-            logger.error(f"Error analyzing {file_info['filename']}: {e}")
-            errors.append({"file": file_info["filename"], "error": str(e)})
-    
-    # Build project-level summary
-    total_issues = sum(r["issue_count"] for r in results)
-    total_lines = sum(r["metrics"]["lines_of_code"] for r in results)
-    lang_breakdown = {}
-    for r in results:
-        lang_breakdown[r["language"]] = lang_breakdown.get(r["language"], 0) + 1
-    
-    # Compute overall health score (simple heuristic)
-    critical_high = sum(
-        r["severity_counts"].get("critical", 0) + r["severity_counts"].get("high", 0)
-        for r in results
-    )
-    if total_lines > 0:
-        health_score = max(0, min(100, 100 - (critical_high / max(total_lines, 1)) * 1000))
+    if task_result.state == 'PENDING':
+        response = {"status": task_result.state, "info": "Queued waiting for workers..."}
+    elif task_result.state != 'FAILURE':
+        response = {"status": task_result.state, "info": task_result.info}
+        if task_result.state == 'SUCCESS':
+            response["result"] = task_result.get()
     else:
-        health_score = 100
-    
-    project_summary_data = {
-        "total_files": len(results),
-        "total_lines": total_lines,
-        "total_issues": total_issues,
-        "health_score": round(health_score, 1),
-        "language_breakdown": lang_breakdown,
-        "processing_time": round(time.time() - start_time, 2),
-    }
-    
-    # Generate AI Project-Level Architectural Review
-    ai_project_review = None
-    if results:
-        try:
-            # Build file manifest with code content for the AI agent
-            file_manifest = []
-            for i, r in enumerate(results):
-                manifest_entry = {
-                    "file_path": r["file_path"],
-                    "language": r["language"],
-                    "lines": r["metrics"]["lines_of_code"],
-                    "issue_count": r["issue_count"],
-                    "severity_counts": r["severity_counts"],
-                    "issues": r["issues"],
-                    "related_files": r.get("related_files", []),
-                }
-                # Attach code content from valid_files for the AI to read
-                if i < len(valid_files):
-                    manifest_entry["content"] = valid_files[i]["content"]
-                file_manifest.append(manifest_entry)
-            
-            ai_project_review = await suggestion_generator.generate_project_review_async(
-                file_manifest, project_summary_data
-            )
-        except Exception as e:
-            logger.warning(f"Project AI review generation failed: {e}")
-            ai_project_review = None
-    
-    # === AUTO-FIX: Generate unified diff patches for files with critical/high issues ===
-    auto_fixes = []
-    try:
-        import asyncio as _asyncio
-        fix_tasks = []
-        for i, r in enumerate(results):
-            critical_count = r["severity_counts"].get("critical", 0) + r["severity_counts"].get("high", 0)
-            if critical_count > 0 and i < len(valid_files):
-                fix_tasks.append(
-                    suggestion_generator.generate_auto_fix_async(
-                        code=valid_files[i]["content"],
-                        issues=r["issues"],
-                        language=r["language"],
-                        filename=r["file_path"],
-                        plan_md=plan_md
-                    )
-                )
-        if fix_tasks:
-            auto_fixes = await _asyncio.gather(*fix_tasks)
-            auto_fixes = [f for f in auto_fixes if f.get("diff")]
-    except Exception as e:
-        logger.warning(f"Auto-fix generation failed: {e}")
-    
-    return {
-        "project_id": project_record.id if project_record else None,
-        "plan_md": plan_md,
-        "project_summary": project_summary_data,
-        "ai_project_review": ai_project_review,
-        "auto_fixes": auto_fixes,
-        "file_results": results,
-        "skipped": skipped,
-        "errors": errors,
-    }
+        response = {"status": task_result.state, "error": str(task_result.info)}
+    return response
 
 
 # ─── Diff Review Mode ───────────────────────────────────────────────
@@ -714,74 +457,26 @@ async def review_diff(
     request: DiffReviewRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Review only the changed lines in a git diff.
-
-    Accepts a unified diff (from `git diff`) and analyzes only the added/changed
-    lines, producing a focused report on the delta quality.
+    """Review only the changed lines in a git diff utilizing AST Tech Debt Agents mapping via Celery.
+    
+    Accepts a unified diff (from `git diff`) and triggers a background 
+    Language Chain agent to do focused Tech Debt analysis on the mutated logic blocks.
     """
-    parsed = _parse_unified_diff(request.diff)
-
-    if not parsed:
-        return {"message": "No parseable changes found in the diff", "files": []}
-
-    results = []
-
-    for entry in parsed:
-        fname = entry["file"]
-        ext = "." + fname.rsplit(".", 1)[-1] if "." in fname else ""
-        lang = EXT_LANG_MAP.get(ext.lower())
-        if not lang:
-            continue
-
-        # Build code from added lines across all hunks
-        added_code = "\n".join(
-            line for hunk in entry["hunks"] for line in hunk["added_lines"]
-        )
-        if not added_code.strip():
-            continue
-
-        # Run static analysis on the added code
-        parser = parsers.get(lang)
-        try:
-            ast = parser.parse(added_code, fname) if parser else {}
-            antipatterns = antipattern_detector.detect(added_code, ast, lang)
-            security_issues = security_scanner.scan(added_code, fname, lang)
-            quality_issues = quality_detector.detect(added_code, fname, lang)
-            ai_patterns = ai_pattern_detector.detect(added_code, fname, lang)
-
-            all_issues = antipatterns + security_issues + quality_issues + ai_patterns
-
-            # Adjust line numbers to be relative to hunk start
-            for hunk in entry["hunks"]:
-                for issue in all_issues:
-                    if issue["line"] <= len(hunk["added_lines"]):
-                        issue["line"] = hunk["start"] + issue["line"] - 1
-
-            if all_issues:
-                results.append({
-                    "file": fname,
-                    "language": lang,
-                    "added_lines": len(added_code.split("\n")),
-                    "issues": all_issues[:15],
-                    "issue_count": len(all_issues),
-                })
-        except Exception as e:
-            logger.warning(f"Diff analysis failed for {fname}: {e}")
-
-    # Score the diff quality
-    total_issues = sum(r["issue_count"] for r in results)
-    total_added = sum(r["added_lines"] for r in results)
-    quality_verdict = "✅ Clean" if total_issues == 0 else (
-        "⚠️ Needs attention" if total_issues < 5 else "🔴 Review required"
-    )
-
-    return {
-        "verdict": quality_verdict,
-        "total_added_lines": total_added,
-        "total_issues": total_issues,
-        "files_reviewed": len(results),
-        "file_results": results,
-    }
+    import uuid
+    from api.tasks.analysis_tasks import analyze_tech_debt_task
+    
+    # We heuristically guess the main language from the diff
+    import re
+    language = "unknown"
+    match = re.search(r'\+\+\+ b/(.*?(\.[a-z]+))', request.diff)
+    if match:
+        ext = match.group(2).lower()
+        language = EXT_LANG_MAP.get(ext, "unknown")
+    
+    task_id = str(uuid.uuid4())
+    task = analyze_tech_debt_task.apply_async(args=[request.diff, language], task_id=task_id)
+    
+    return {"task_id": task.id, "status": "processing"}
 
 
 # ─── Custom Rules Endpoint ──────────────────────────────────────────

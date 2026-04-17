@@ -14,7 +14,7 @@ function ReportDialog({ scanId, onClose }: { scanId: string | null, onClose: () 
   const { data, isLoading } = useScanReport(scanId);
 
   return (
-    <Dialog.Root open={!!scanId} onOpenChange={(open) => !open && onClose()}>
+    <Dialog.Root open={!!scanId} onOpenChange={(open: boolean) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <Dialog.Content className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-4xl translate-x-[-50%] translate-y-[-50%] gap-4 border border-border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-lg md:w-full max-h-[85vh] flex flex-col">
@@ -68,15 +68,15 @@ export function ScanHistory() {
   const columns = [
     columnHelper.accessor('project_name', {
       header: 'Project',
-      cell: info => <span className="font-medium">{info.getValue()}</span>,
+      cell: (info: any) => <span className="font-medium">{info.getValue()}</span>,
     }),
     columnHelper.accessor('date', {
       header: 'Scan Date',
-      cell: info => new Date(info.getValue()).toLocaleDateString(),
+      cell: (info: any) => new Date(info.getValue()).toLocaleDateString(),
     }),
     columnHelper.accessor('health_score', {
       header: 'Health Score',
-      cell: info => {
+      cell: (info: any) => {
          const score = info.getValue()
          return (
            <div className="flex items-center gap-2">
@@ -93,11 +93,11 @@ export function ScanHistory() {
     }),
     columnHelper.accessor('technical_debt_hours', {
       header: 'Tech Debt',
-      cell: info => <span className="text-muted-foreground">{info.getValue()} hrs</span>,
+      cell: (info: any) => <span className="text-muted-foreground">{info.getValue()} hrs</span>,
     }),
     columnHelper.accessor('critical_vulnerabilities', {
       header: 'Critical Findings',
-      cell: info => (
+      cell: (info: any) => (
         <span className={info.getValue() > 0 ? "text-destructive font-semibold" : "text-green-500"}>
           {info.getValue()}
         </span>
@@ -105,7 +105,7 @@ export function ScanHistory() {
     }),
     columnHelper.display({
       id: 'actions',
-      cell: props => (
+      cell: (props: any) => (
         <button 
            onClick={() => setSelectedScanId(props.row.original.id)}
            className="text-xs font-medium text-primary hover:underline hover:text-primary/80 transition-colors"
@@ -139,9 +139,9 @@ export function ScanHistory() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="bg-muted/50 text-muted-foreground border-b border-border uppercase text-[10px] tracking-wider">
-              {table.getHeaderGroups().map(headerGroup => (
+              {table.getHeaderGroups().map((headerGroup: any) => (
                 <tr key={headerGroup.id}>
-                  {headerGroup.headers.map(header => (
+                  {headerGroup.headers.map((header: any) => (
                     <th key={header.id} className="px-4 py-3 font-semibold">
                       {header.isPlaceholder
                         ? null
@@ -159,9 +159,9 @@ export function ScanHistory() {
                  <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground animate-pulse">Loading relational metadata via Axios/React Query...</td>
                  </tr>
-              ) : table.getRowModel().rows.map(row => (
+              ) : table.getRowModel().rows.map((row: any) => (
                 <tr key={row.id} className="hover:bg-muted/30 transition-colors">
-                  {row.getVisibleCells().map(cell => (
+                  {row.getVisibleCells().map((cell: any) => (
                     <td key={cell.id} className="px-4 py-3">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>

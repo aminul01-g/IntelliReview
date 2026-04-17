@@ -25,8 +25,7 @@ export function useAnalysisTaskStatus(taskId: string | null) {
       return response.data;
     },
     enabled: !!taskId,
-    // Poll every 2 seconds if status is still pending or processing
-    refetchInterval: (query) => {
+    refetchInterval: (query: any) => {
       const status = query.state.data?.status;
       if (status === 'completed' || status === 'failed') return false;
       return 2000; 

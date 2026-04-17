@@ -393,6 +393,426 @@ async def analyze_project(directory: str) -> str:
     return report
 
 
+# ─── Tool 3: Search Symbol (AST) ────────────────────────────────
+
+@mcp.tool()
+async def search_symbol(symbol_name: str, directory: str) -> str:
+    """Search for a symbol's definition across the parsed AST of the project.
+    
+    Args:
+        symbol_name: The name of the class or function to find.
+        directory: The project directory to scan.
+    """
+    dir_path = Path(directory).resolve()
+    if not dir_path.is_dir():
+        return f"Error: '{directory}' is not a valid directory."
+        
+    found = []
+    
+    for fpath in sorted(dir_path.rglob("*")):
+        if not fpath.is_file():
+            continue
+            
+        ext = fpath.suffix.lower()
+        lang = EXT_LANG_MAP.get(ext)
+        if not lang or lang not in parsers:
+            continue
+            
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+            parser = parsers[lang]
+            ast = parser.parse(content, str(fpath))
+            
+            # Simple recursive search
+            def search_node(node):
+                if node.name == symbol_name:
+                    found.append(f"Found '{symbol_name}' in {fpath.name} (L{node.line_start}-L{node.line_end}) as {node.type}")
+                for child in node.children:
+                    search_node(child)
+            
+            search_node(ast)
+        except Exception:
+            pass
+            
+    if not found:
+        return f"Symbol '{symbol_name}' not found."
+    return "\n".join(found)
+
+# ─── Tool 4: Call Graph Analysis (AST) ──────────────────────────
+
+@mcp.tool()
+async def analyze_call_graph(file_path: str) -> str:
+    """Analyze the AST to extract a primitive call graph for a file.
+    
+    Args:
+        file_path: The absolute path to the file.
+    """
+    fpath = Path(file_path).resolve()
+    if not fpath.is_file():
+        return f"Error: '{file_path}' is not a valid file."
+        
+    ext = fpath.suffix.lower()
+    lang = EXT_LANG_MAP.get(ext)
+    
+    if not lang or lang not in parsers:
+        return f"Error: No AST parser for {ext}"
+        
+    try:
+        content = fpath.read_text(encoding="utf-8", errors="ignore")
+        parser = parsers[lang]
+        ast = parser.parse(content, str(fpath))
+        
+        edges = []
+        
+        def traverse(node, current_func=None):
+            # If we enter a function definition, update current context
+            ctx = current_func
+            if node.type in ["FunctionDef", "MethodDef", "FunctionDeclaration"]:
+                ctx = node.name
+                
+            # If it's a function call, record the edge
+            if "Call" in node.type or "Invocation" in node.type:
+                edges.append((ctx or "global", node.name))
+                
+            for child in node.children:
+                traverse(child, ctx)
+                
+        traverse(ast)
+        
+        if not edges:
+            return f"No function calls detected in {fpath.name}."
+            
+        report = f"## Call Graph for {fpath.name}\n"
+        for caller, callee in edges:
+            report += f"- `{caller}` -> `{callee}`\n"
+            
+        return report
+    except Exception as e:
+        return f"Failed to build call graph: {e}"
+
+
+# ─── Tool 5: Dataflow Tracking ──────────────────────────────────
+
+# Sensitive sinks for dataflow analysis
+_SENSITIVE_SINKS = {
+    "execute", "raw", "query", "eval", "exec", "system", "popen",
+    "subprocess", "os.system", "cursor.execute", "db.execute",
+    "authenticate", "verify_password", "check_password",
+    "open", "write", "unlink", "remove", "rmdir",
+    "innerHTML", "document.write", "dangerouslySetInnerHTML",
+}
+
+# Untrusted input source patterns
+_SOURCE_PATTERNS = [
+    r'request\.(args|form|params|json|query|body|data)\[',
+    r'request\.get\(', r'params\[', r'query\[',
+    r'input\(', r'stdin', r'req\.(body|params|query)',
+    r'document\.(getElementById|querySelector)',
+    r'window\.location', r'argv\[',
+]
+
+@mcp.tool()
+async def track_dataflow(file_path: str, source_expression: str = "") -> str:
+    """Track dataflow from untrusted input sources to sensitive sinks.
+
+    Scans a file's AST and source code to identify if untrusted client input
+    (e.g., request params, user input) flows into sensitive operations
+    (e.g., DB queries, eval, auth logic, file I/O) without sanitization.
+
+    Args:
+        file_path: Absolute path to the source file to analyze.
+        source_expression: Optional specific expression to trace (e.g., 'request.args["user_id"]').
+
+    Returns:
+        A Markdown report of identified dataflow paths with taint status.
+    """
+    import re
+
+    fpath = Path(file_path).resolve()
+    if not fpath.is_file():
+        return f"Error: '{file_path}' is not a valid file."
+
+    ext = fpath.suffix.lower()
+    lang = EXT_LANG_MAP.get(ext)
+    if not lang:
+        return f"Error: Unsupported file extension '{ext}'."
+
+    try:
+        content = fpath.read_text(encoding="utf-8", errors="ignore")
+    except Exception as e:
+        return f"Error reading file: {e}"
+
+    lines = content.split("\n")
+    traces = []
+
+    # Phase 1: Find all source locations (user input entry points)
+    sources = []
+    for i, line in enumerate(lines, 1):
+        for pattern in _SOURCE_PATTERNS:
+            match = re.search(pattern, line)
+            if match:
+                sources.append({
+                    "line": i,
+                    "expression": line.strip(),
+                    "pattern": pattern,
+                })
+                break
+
+    if source_expression:
+        # Filter to only the specified expression
+        sources = [s for s in sources if source_expression in s["expression"]] or sources
+
+    # Phase 2: Find all sink locations (sensitive operations)
+    sinks = []
+    for i, line in enumerate(lines, 1):
+        for sink in _SENSITIVE_SINKS:
+            if sink in line:
+                sinks.append({
+                    "line": i,
+                    "expression": line.strip(),
+                    "sink_type": sink,
+                })
+                break
+
+    # Phase 3: Trace paths — check if any source variable name appears near a sink
+    for source in sources:
+        # Extract variable names from the source line
+        src_vars = set(re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', source["expression"]))
+        src_vars -= {"request", "args", "form", "params", "json", "query", "body",
+                      "data", "get", "input", "req", "document", "window"}
+
+        for sink in sinks:
+            sink_vars = set(re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', sink["expression"]))
+            shared = src_vars & sink_vars
+
+            if shared or (source["line"] < sink["line"] and sink["line"] - source["line"] < 50):
+                # Check for sanitization between source and sink
+                sanitized = False
+                for j in range(source["line"], min(sink["line"], len(lines))):
+                    sanitize_line = lines[j - 1].lower()
+                    if any(kw in sanitize_line for kw in [
+                        "sanitize", "escape", "parameterize", "validate",
+                        "clean", "strip", "encode", "dompurify", "bleach"
+                    ]):
+                        sanitized = True
+                        break
+
+                taint_status = "✅ Sanitized" if sanitized else "⚠️ UNSANITIZED"
+                traces.append({
+                    "source": source,
+                    "sink": sink,
+                    "shared_vars": list(shared),
+                    "sanitized": sanitized,
+                    "taint_status": taint_status,
+                })
+
+    # Build report
+    report = f"## Dataflow Analysis: `{fpath.name}`\n\n"
+    report += f"| Metric | Count |\n|--------|-------|\n"
+    report += f"| Sources (untrusted input) | {len(sources)} |\n"
+    report += f"| Sinks (sensitive ops) | {len(sinks)} |\n"
+    report += f"| Traced paths | {len(traces)} |\n\n"
+
+    if not traces:
+        report += "✅ No untrusted data flows to sensitive sinks detected.\n"
+        return report
+
+    report += "### Dataflow Traces\n\n"
+    for i, trace in enumerate(traces, 1):
+        report += f"#### Trace {i}: {trace['taint_status']}\n"
+        report += f"- **Source** (L{trace['source']['line']}): `{trace['source']['expression']}`\n"
+        report += f"- **Sink** (L{trace['sink']['line']}): `{trace['sink']['expression']}`\n"
+        if trace["shared_vars"]:
+            report += f"- **Shared variables:** `{', '.join(trace['shared_vars'])}`\n"
+        if not trace["sanitized"]:
+            report += f"- 🔴 **Action Required:** Untrusted input reaches `{trace['sink']['sink_type']}` without sanitization\n"
+        report += "\n"
+
+    return report
+
+
+# ─── Tool 6: Get Callers (Reverse Call Graph) ──────────────────────
+
+@mcp.tool()
+async def get_callers(directory: str, function_name: str) -> str:
+    """Find all call-sites for a given function across the project directory.
+
+    Essential for reachability analysis — answers "who calls this vulnerable function?".
+
+    Args:
+        directory: Project directory path to scan.
+        function_name: The name of the function to find callers for.
+
+    Returns:
+        A Markdown report of all files and lines where the function is called.
+    """
+    dir_path = Path(directory).resolve()
+    if not dir_path.is_dir():
+        return f"Error: '{directory}' is not a valid directory."
+
+    callers = []
+    
+    # Simple regex fall-back for cross-language support
+    import re
+    # Match function calls like: function_name(
+    # Also handles obj.function_name(
+    call_pattern = re.compile(rf'\b{function_name}\s*\(')
+
+    for fpath in sorted(dir_path.rglob("*")):
+        if not fpath.is_file():
+            continue
+        rel = str(fpath.relative_to(dir_path))
+        parts = rel.replace("\\", "/").split("/")
+        if any(p in SKIP_PATTERNS for p in parts):
+            continue
+
+        ext = fpath.suffix.lower()
+        if not EXT_LANG_MAP.get(ext):
+            continue
+
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+            lines = content.split("\n")
+            
+            # Simple context tracking for identifying the calling function
+            current_func = "global"
+            func_def_pattern = re.compile(r'^\s*(?:async\s+)?def\s+([a-zA-Z0-9_]+)\s*\(')
+            
+            for i, line in enumerate(lines, 1):
+                func_match = func_def_pattern.match(line)
+                if func_match:
+                    current_func = func_match.group(1)
+                    
+                if call_pattern.search(line):
+                    callers.append({
+                        "file": rel,
+                        "line": i,
+                        "calling_context": current_func,
+                        "code": line.strip()
+                    })
+        except Exception:
+            pass
+
+    if not callers:
+        return f"No callers found for `{function_name}`."
+
+    report = f"## Callers of `{function_name}`\n\n"
+    for c in callers:
+        report += f"- **{c['file']}:L{c['line']}** (in `{c['calling_context']}`): `{c['code']}`\n"
+        
+    return report
+
+# ─── Tool 7: Semantic Reachability Analysis ────────────────────────
+
+import re
+
+# Entry point patterns that indicate reachable paths from the outside world
+_ENTRY_POINT_PATTERNS = [
+    re.compile(r'@(?:app|router|bp)\.(?:get|post|put|delete|patch)'),
+    re.compile(r'def\s+main\s*\('),
+    re.compile(r'if\s+__name__\s*==\s*[\'"]__main__[\'"]'),
+    re.compile(r'@celery\.task'),
+    re.compile(r'@.*(?:job|listener|handler)')
+]
+
+@mcp.tool()
+async def check_reachability(directory: str, sink_function: str, max_depth: int = 5) -> str:
+    """Perform Semantic Reachability Analysis on a sensitive sink.
+    
+    Traces backwards from the sink function using get_callers to see if an
+    untrusted entry point (HTTP handler, CLI, event listener) can reach it.
+
+    Args:
+        directory: Project directory to analyze.
+        sink_function: The vulnerable function (e.g., 'cursor.execute').
+        max_depth: Maximum call-graph depth to traverse backwards.
+
+    Returns:
+        Reachability verdict and the traced paths.
+    """
+    dir_path = Path(directory).resolve()
+    if not dir_path.is_dir():
+        return f"Error: '{directory}' is not a valid directory."
+
+    visited = set()
+    found_paths = []
+    
+    # Extract just the function name if it's a method call (e.g., "cursor.execute" -> "execute")
+    base_func = sink_function.split('.')[-1]
+
+    async def trace_back(func_name: str, path: list, depth: int):
+        if depth >= max_depth:
+            return
+            
+        if func_name in visited:
+            return
+        visited.add(func_name)
+        
+        # Check if this function itself is an entry point by scanning the file it's in
+        # (This is a simplified heuristic: we rely on looking at callers)
+        
+        report = await get_callers(directory, func_name)
+        if "No callers found" in report:
+            return
+            
+        # Parse callers from report
+        # Format: - **file:L1** (in `ctx`): `code`
+        import re
+        lines = report.split("\n")
+        
+        caller_regex = re.compile(r'-\s+\*\*([^:]+):L(\d+)\*\*\s+\(in\s+`([^`]+)`\):\s+`(.*)`')
+        
+        for line in lines:
+            match = caller_regex.search(line)
+            if match:
+                file_rel = match.group(1)
+                line_idx = match.group(2)
+                ctx = match.group(3)
+                code = match.group(4)
+                
+                new_path = path + [f"{ctx} ({file_rel}:L{line_idx})"]
+                
+                # Check if the file/line has an entry point decorator
+                is_entry = False
+                if ctx == "global" and "main" not in func_name.lower():
+                    # Global calls are often module-level execution (reachable if imported/run)
+                    if code.startswith('if __name__'):
+                        is_entry = True
+                        
+                for p in _ENTRY_POINT_PATTERNS:
+                    if p.search(code):
+                        is_entry = True
+                        break
+                        
+                # Also check if the context name implies it's an entry point
+                if any(x in ctx.lower() for x in ['cli', 'main', 'handler', 'controller', 'route', 'task']):
+                    is_entry = True
+                    
+                if is_entry:
+                    found_paths.append(new_path)
+                elif ctx != "global":
+                    # Recurse up the call graph
+                    await trace_back(ctx, new_path, depth + 1)
+                    
+    # Start trace
+    await trace_back(base_func, [f"{base_func} (sink)"], 0)
+    
+    if found_paths:
+        report = f"## 🔴 Reachability Verdict: **REACHABLE**\n\n"
+        report += f"Found {len(found_paths)} path(s) from an external entry point to `{sink_function}`:\n\n"
+        for i, path in enumerate(found_paths, 1):
+            report += f"### Path {i}\n"
+            # Reverse path so it flows from Trigger -> Sink
+            path_rev = path[::-1]
+            for step in path_rev:
+                report += f"⬇️ `{step}`\n"
+    else:
+        report = f"## 🟢 Reachability Verdict: **UNREACHABLE**\n\n"
+        report += f"No path found from an external entry point to `{sink_function}` within depth {max_depth}.\n"
+        report += "This vulnerability is likely theoretical, dead code, or only reachable internally."
+        
+    return report
+
 # ─── Entry point ─────────────────────────────────────────────────
 
 if __name__ == "__main__":

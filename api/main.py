@@ -11,7 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from config.settings import settings
-from api.routes import analysis, auth, metrics, feedback, webhooks
+from api.routes import analysis, auth, metrics, feedback, webhooks, history, oauth_device, review_feedback, policies
 from api.database import engine, Base
 
 # Ensure all models are loaded before create_all
@@ -65,6 +65,10 @@ app.include_router(analysis.router, prefix=f"{settings.API_PREFIX}/analysis", ta
 app.include_router(metrics.router, prefix=f"{settings.API_PREFIX}/metrics", tags=["Metrics"])
 app.include_router(feedback.router, prefix=f"{settings.API_PREFIX}/feedback", tags=["Feedback"])
 app.include_router(webhooks.router, prefix=f"{settings.API_PREFIX}/webhooks", tags=["Webhooks"])
+app.include_router(history.router, prefix=f"{settings.API_PREFIX}/history", tags=["History"])
+app.include_router(oauth_device.router, prefix=f"{settings.API_PREFIX}/oauth", tags=["OAuth Device Flow"])
+app.include_router(review_feedback.router, prefix=f"{settings.API_PREFIX}/review-feedback", tags=["Review Feedback"])
+app.include_router(policies.router, prefix=f"{settings.API_PREFIX}/policies", tags=["Policies"])
 
 @app.get("/health")
 @limiter.limit("60/minute")

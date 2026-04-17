@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ProfileSettings } from './components/profile/ProfileSettings';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -507,6 +508,10 @@ const IntelliReviewDashboard = () => {
         {currentView === 'custom-rules' && (
           <CustomRulesView />
         )}
+
+        {currentView === 'profile' && (
+          <ProfileSettings />
+        )}
       </div>
     </div>
   );
@@ -613,7 +618,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, user, on
     { id: 'diff-review', icon: GitCompareArrows, label: 'Diff Review' },
     { id: 'custom-rules', icon: Settings, label: 'Custom Rules' },
     { id: 'history', icon: Activity, label: 'History' },
-    { id: 'metrics', icon: Activity, label: 'Metrics' }
+    { id: 'metrics', icon: Activity, label: 'Metrics' },
+    { id: 'profile', icon: User, label: 'Profile Settings' }
   ];
 
   return (

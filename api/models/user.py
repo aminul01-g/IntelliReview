@@ -35,4 +35,31 @@ class User(Base):
     
     # Relationships
     team = relationship("Team", backref="members")
+    profile = relationship("UserProfile", back_populates="user", uselist=False)
+
+class UserProfile(Base):
+    """User Profile model for IntelliReview."""
+    __tablename__ = "user_profiles"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    ai_style_guides = Column(JSON, nullable=True) # Custom AI linters/tones
+    notification_preferences = Column(JSON, nullable=True)
+    role_mappings = Column(JSON, nullable=True) # Corporate identities linking
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    user = relationship("User", back_populates="profile")
+
+class OAuthDeviceCode(Base):
+    """OAuth 2.0 Device Code flow tracking table."""
+    __tablename__ = "oauth_device_codes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    device_code = Column(String(100), unique=True, index=True, nullable=False)
+    user_code = Column(String(20), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True) # Null until authorized
+    is_authorized = Column(Boolean, default=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 

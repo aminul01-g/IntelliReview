@@ -1,0 +1,143 @@
+# IntelliReview AnalysisHistory — GraphQL Schema
+# 
+# This schema defines the API for querying longitudinal code quality
+# metrics, hotspot analysis, and weekly trend data from the TimescaleDB
+# hypertable backing store.
+
+scalar DateTime
+
+type Query {
+    """
+    Paginated history of analysis runs for a repository.
+    Uses Relay-style cursor-based pagination on recorded_at.
+    """
+    analysisHistory(
+        repositoryId: Int!
+        first: Int = 20
+        after: String
+        startDate: DateTime
+        endDate: DateTime
+    ): AnalysisHistoryConnection!
+
+    """
+    Top hotspot files for a repository, ranked by the composite
+    hotspot score (commit_frequency × avg_cyclomatic_complexity).
+    """
+    hotspots(
+        repositoryId: Int!
+        limit: Int = 10
+    ): [Hotspot!]!
+
+    """
+    Weekly aggregated trend data from the TimescaleDB continuous aggregate.
+    Returns the most recent N weeks of rollup data.
+    """
+    weeklyTrend(
+        repositoryId: Int!
+        weeks: Int = 12
+    ): [WeeklySnapshot!]!
+}
+
+# ─── Relay-style Pagination ──────────────────────────────────────────
+
+type AnalysisHistoryConnection {
+    edges: [AnalysisHistoryEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int!
+}
+
+type AnalysisHistoryEdge {
+    cursor: String!
+    node: MetricsSnapshot!
+}
+
+type PageInfo {
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+    startCursor: String
+    endCursor: String
+}
+
+# ─── Core Types ──────────────────────────────────────────────────────
+
+"""
+A single point-in-time metrics snapshot computed from an analysis run.
+Stored in the metrics_history TimescaleDB hypertable.
+"""
+type MetricsSnapshot {
+    recordedAt: DateTime!
+    repositoryId: Int!
+    analysisRunId: Int!
+
+    "Composite code health score on a 1.0–10.0 scale"
+    codeHealthScore: Float!
+
+    "Technical debt in hours (SonarQube 8-hour day convention)"
+    technicalDebtHours: Float!
+
+    "Technical debt in work days (hours / 8)"
+    technicalDebtDays: Float!
+
+    "Issue counts"
+    totalIssues: Int!
+    criticalCount: Int!
+    highCount: Int!
+    mediumCount: Int!
+    lowCount: Int!
+
+    "Code metrics"
+    linesOfCode: Int!
+    avgComplexity: Float!
+    maxComplexity: Int!
+    maintainabilityIndex: Float!
+    duplicationPct: Float!
+
+    "Dimension-level quality grades"
+    grades: DimensionGrades!
+}
+
+"""
+Quality grades across four dimensions, each rated A through D.
+"""
+type DimensionGrades {
+    "A=0 critical/high bugs, B=1, C=2-5, D=>5"
+    reliability: String!
+
+    "A=0 vulns, B=1, C=2-5, D=>5"
+    security: String!
+
+    "Based on Maintainability Index and Cyclomatic Complexity thresholds"
+    maintainability: String!
+
+    "Based on test coverage percentage (defaults to D until integration)"
+    coverage: String!
+}
+
+"""
+A file identified as a high-risk refactoring target by correlating
+git commit frequency with cyclomatic complexity.
+"""
+type Hotspot {
+    filePath: String!
+    commitFrequency: Int!
+    avgCyclomaticComplexity: Float!
+    maxCyclomaticComplexity: Int!
+
+    "Composite risk score: commitFrequency × avgCyclomaticComplexity"
+    hotspotScore: Float!
+
+    lastAnalyzedAt: DateTime!
+}
+
+"""
+Aggregated weekly metrics from the TimescaleDB continuous aggregate.
+"""
+type WeeklySnapshot {
+    week: DateTime!
+    avgHealth: Float!
+    totalDebtHours: Float!
+    peakIssues: Int!
+    latestReliability: String!
+    latestSecurity: String!
+    latestMaintainability: String!
+}

@@ -22,8 +22,10 @@ from analyzer.metrics.duplication import DuplicationDetector
 from analyzer.detectors.antipatterns import AntiPatternDetector
 from analyzer.detectors.security import SecurityScanner
 from analyzer.detectors.quality import QualityDetector
-from ml_models.generators.suggestion_generator import SuggestionGenerator
+from ml_models.agents.orchestrator import PRReviewOrchestrator
 from analyzer.context.project_context import ProjectContextBuilder
+from analyzer.utils.redactor import SecretRedactor
+from api.schemas.feedback_schemas import SEVERITY_MARKERS
 
 router = APIRouter()
 
@@ -43,7 +45,7 @@ duplication_detector = DuplicationDetector()
 antipattern_detector = AntiPatternDetector()
 security_scanner = SecurityScanner()
 quality_detector = QualityDetector()
-suggestion_generator = SuggestionGenerator(provider="huggingface")
+orchestrator = PRReviewOrchestrator()
 project_context_builder = ProjectContextBuilder()
 
 
@@ -58,6 +60,8 @@ async def analyze_pr_async(repo_full_name: str, pr_number: int):
         repo = g.get_repo(repo_full_name)
         pr = repo.get_pull(pr_number)
         files = pr.get_files()
+        commits = pr.get_commits()
+        latest_commit = commits.reversed[0] if commits.totalCount > 0 else None
         
         results = []
         file_manifest = []
@@ -170,77 +174,104 @@ async def analyze_pr_async(repo_full_name: str, pr_number: int):
             except Exception as ex:
                 print(f"Error analyzing file {filename} in PR: {ex}")
                 
-        # Generate PR Comment Body
+        # Generate PR Final AI Review and Inline Comments via Orchestrator
         if not results:
             comment_body = "🚀 **IntelliReview PR Audit**\n\n✅ Checked changed files. No critical issues detected."
             pr.create_issue_comment(comment_body)
             return
 
-        critical_high = sum(
-            r["severity_counts"].get("critical", 0) + r["severity_counts"].get("high", 0)
-            for r in results
-        )
-        health_score = max(0, min(100, 100 - (critical_high / max(total_lines, 1)) * 1000))
-        
-        project_summary_data = {
-            "total_files": len(results),
-            "total_lines": total_lines,
-            "total_issues": total_issues,
-            "health_score": round(health_score, 1),
-            "language_breakdown": {}
-        }
-        
-        # Get AI Project-Level architectural review
-        ai_review = await suggestion_generator.generate_project_review_async(file_manifest, project_summary_data)
-        
-        # Build AI Auto-fixes for Critical Issues
-        auto_fixes = []
-        try:
-            fix_tasks = []
-            for i, r in enumerate(results):
-                critical_count = r["severity_counts"].get("critical", 0) + r["severity_counts"].get("high", 0)
-                if critical_count > 0:
-                    code_to_fix = next((vf["content"] for vf in valid_files if vf["filename"] == r["file_path"]), "")
-                    if code_to_fix:
-                        fix_tasks.append(
-                            suggestion_generator.generate_auto_fix_async(
-                                code=code_to_fix,
-                                issues=r["issues"],
-                                language=r["language"],
-                                filename=r["file_path"]
-                            )
-                        )
-            if fix_tasks:
-                auto_fixes = await asyncio.gather(*fix_tasks)
-                auto_fixes = [f for f in auto_fixes if f.get("diff")]
-        except Exception as e:
-            print(f"Auto-fix generation failed: {e}")
-        
-        comment_body = f"🚀 **IntelliReview PR Audit**\n\n"
-        comment_body += f"> Analyzed {len(results)} files. Overall Health Delta: **{round(health_score,1)}%**\n\n"
-        
-        comment_body += "<details open>\n<summary><b>🤖 AI Architectural Review</b></summary>\n\n"
-        comment_body += f"{ai_review}\n\n</details>\n\n"
-        
-        if auto_fixes:
-            comment_body += "## 🛠️ Recommended AI Auto-Fixes\n"
-            comment_body += "> You can apply these patches locally to instantly resolve the identified vulnerabilities.\n\n"
-            for fix in auto_fixes:
-                comment_body += f"<details open>\n<summary><b>Apply patch for `{fix.get('filename')}`</b></summary>\n\n"
-                comment_body += f"```diff\n{fix.get('diff')}\n```\n\n"
-                comment_body += "</details>\n\n"
-        
-        comment_body += "<details>\n<summary><b>📄 Specific Issues</b></summary>\n\n"
+        # ─── FeedbackGenerator Integration ─────────────────────────────
+        # Use the structured FeedbackGenerator pipeline instead of manual
+        # string concatenation for world-class PR comments.
+        from analyzer.feedback.feedback_generator import FeedbackGenerator
+        from analyzer.feedback.verification import VerificationWalkthroughGenerator
+        from analyzer.feedback.pr_gate import PRGate
+
+        feedback_gen = FeedbackGenerator(project_root=None)
+
+        # Aggregate all issues across files for the review
+        all_pr_issues = []
         for r in results:
-            if r["issue_count"] > 0:
-                comment_body += f"### `{r['file_path']}`\n"
-                for iss in r['issues'][:5]:
-                    comment_body += f"- **L{iss.get('line', '?')}** [{iss.get('severity', 'info').upper()}]: {iss.get('message', '')}  \n"
-                if r["issue_count"] > 5:
-                    comment_body += f"  - *...and {r['issue_count'] - 5} more issues.*\n"
-                comment_body += "\n"
-        comment_body += "</details>\n"
-        
+            for issue in r["issues"]:
+                issue["file_path"] = r["file_path"]
+            all_pr_issues.extend(r["issues"])
+
+        # Build the full code context from all reviewed files
+        combined_code = "\n\n".join(
+            f"# --- {vf['filename']} ---\n{vf['content']}"
+            for vf in valid_files
+            if any(r["file_path"] == vf["filename"] for r in results)
+        )
+
+        # Generate structured review
+        pr_review = feedback_gen.generate_review(
+            raw_findings=all_pr_issues,
+            code=combined_code,
+            language="multi",
+            repository=repo_full_name,
+            pr_number=pr_number,
+            files_reviewed=len(results),
+        )
+
+        # Render to Markdown
+        comment_body = feedback_gen.render_markdown(pr_review)
+
+        # ─── PR Gate Evaluation ───
+        total_lines = sum(len(vf["content"].split("\n")) for vf in valid_files)
+        pr_gate = PRGate()
+        verdict = pr_gate.evaluate(pr_review, total_lines)
+
+        # Update commit status via GitHub API
+        if latest_commit:
+            try:
+                commit_obj = repo.get_commit(latest_commit)
+                state = "success" if verdict.verdict == "pass" else ("pending" if verdict.verdict == "warn" else "failure")
+                description = f"IntelliReview: {verdict.verdict.upper()} - Score: {verdict.health_score}%"
+                commit_obj.create_status(
+                    state=state,
+                    description=description[:140],
+                    context="IntelliReview Gate"
+                )
+
+                # Prepend gate verdict to comment
+                gate_header = f"## 🚦 PR Quality Gate: **{verdict.verdict.upper()}**\n"
+                gate_header += f"- **Health Score**: {verdict.health_score}%\n"
+                gate_header += f"- **Technical Debt**: {verdict.technical_debt_hours}h\n"
+                if verdict.block_reasons:
+                    gate_header += "\n**Block Reasons:**\n" + "\n".join(f"- 🔴 {r}" for r in verdict.block_reasons) + "\n"
+                if verdict.recommendations:
+                    gate_header += "\n**Recommendations:**\n" + "\n".join(f"- 🟡 {r}" for r in verdict.recommendations) + "\n"
+                gate_header += "\n---\n\n"
+                
+                comment_body = gate_header + comment_body
+            except Exception as e:
+                print(f"Failed to post commit status: {e}")
+
+        # Post inline comments for important findings with diffs
+        for finding in pr_review.important_findings:
+            if finding.line > 0 and finding.autofix and latest_commit:
+                try:
+                    suggestion_block = f"```suggestion\n{finding.autofix.after}\n```"
+                    inline_body = (
+                        f"{SEVERITY_MARKERS.get(finding.severity, '⚪')} **{finding.title}**\n\n"
+                        f"{finding.narrative}\n\n{suggestion_block}"
+                    )
+                    pr.create_review_comment(
+                        body=inline_body,
+                        commit_id=latest_commit,
+                        path=finding.file_path,
+                        line=finding.line,
+                        side="RIGHT"
+                    )
+                except Exception as e:
+                    print(f"Failed to post inline comment for {finding.file_path}:{finding.line}: {e}")
+
+        # Generate and log the verification walkthrough
+        wt_gen = VerificationWalkthroughGenerator()
+        if pr_review.verification_walkthrough:
+            walkthrough_md = wt_gen.render_artifact_markdown(pr_review.verification_walkthrough)
+            print(f"Verification Walkthrough:\n{walkthrough_md}")
+
         pr.create_issue_comment(comment_body)
         print(f"Successfully posted PR review to {repo_full_name}#{pr_number}")
         

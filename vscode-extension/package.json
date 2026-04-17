@@ -11,7 +11,9 @@
     "Linters",
     "Machine Learning"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "*"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -36,6 +38,21 @@
           "type": "string",
           "default": "",
           "description": "API Token (JWT) for IntelliReview authentication. Required for cloud analysis."
+        },
+        "intellireview.analyzeOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically run IntelliReview on file save."
+        },
+        "intellireview.enableMcpMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run IntelliReview locally via MCP Server subprocess instead of HTTP API."
+        },
+        "intellireview.mcpServerPath": {
+          "type": "string",
+          "default": "intellireview/api/mcp_server.py",
+          "description": "Path to the local MCP server Python script."
         }
       }
     }

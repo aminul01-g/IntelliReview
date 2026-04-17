@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database (TimescaleDB — drop-in superset of PostgreSQL)
   postgres:
-    image: postgres:15-alpine
+    image: timescale/timescaledb:latest-pg15
     container_name: intellireview_postgres
     environment:
       POSTGRES_USER: intellireview
@@ -135,6 +135,26 @@ services:
   #   networks:
   #     - intellireview_network
   #   restart: unless-stopped
+
+  # Analysis History Service (Go + GraphQL + TimescaleDB aggregation)
+  analysis-history:
+    build:
+      context: ./services/analysis-history
+      dockerfile: Dockerfile
+    container_name: intellireview_analysis_history
+    environment:
+      - DATABASE_URL=postgresql://intellireview:${POSTGRES_PASSWORD:-password}@postgres:5432/intellireview_db
+      - AGGREGATION_INTERVAL=5m
+      - LOG_LEVEL=info
+      - PORT=4000
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - intellireview_network
+    restart: unless-stopped
 
   # Nginx Reverse Proxy
   nginx:

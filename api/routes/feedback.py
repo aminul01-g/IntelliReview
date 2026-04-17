@@ -8,6 +8,7 @@ from api.database import get_db
 from api.models.user import User
 from api.models.feedback import RuleTelemetry, SuggestionFeedback
 from api.auth import get_current_user
+from analyzer.feedback.learning_loop import LearningLoop
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,10 @@ async def submit_feedback(
             telemetry.current_weight = min(150, telemetry.current_weight + 5)
             
     db.commit()
+    
+    # 3. Trigger Continuous Learning Loop
+    loop = LearningLoop()
+    loop.on_feedback(feedback.suggestion_id, feedback.issue_type, feedback.accepted)
     
     return {
         "message": "Feedback recorded successfully in Postgres",

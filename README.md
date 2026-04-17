@@ -3,9 +3,9 @@ title: IntelliReview
 emoji: 🛡️
 colorFrom: blue
 colorTo: indigo
-sdk: gradio
-app_file: app.py
+sdk: docker
 pinned: false
+app_port: 7860
 ---
 
 <div align="center">

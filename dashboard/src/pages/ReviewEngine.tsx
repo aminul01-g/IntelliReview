@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { FileCode2, Play, AlertCircle, CheckCircle2, ShieldAlert, Check, X } from 'lucide-react'
+import { FileCode, Play, AlertCircle, CheckCircle, ShieldAlert, Check, X } from 'lucide-react'
 import { useSubmitAnalysis, useAnalysisTaskStatus } from '@/hooks/useAnalysisTask'
 import { useTelemetryFeedback } from '@/hooks/useTelemetryFeedback'
 
@@ -79,7 +79,7 @@ export function ReviewEngine() {
     e.preventDefault();
     if (!diffInput.trim()) return;
     submitMutation.mutate({ diff: diffInput, project: 'default-project' }, {
-      onSuccess: (data) => {
+      onSuccess: (data: any) => {
         setActiveTaskId(data.task_id);
       }
     });
@@ -108,7 +108,7 @@ export function ReviewEngine() {
         {/* Left pane: Input */}
         <div className="flex flex-col gap-4 border border-border rounded-lg bg-card p-4 min-h-0">
           <div className="flex items-center gap-2 text-sm font-medium border-b border-border pb-2 shrink-0">
-            <FileCode2 className="h-4 w-4" /> Git Diff Input
+            <FileCode className="h-4 w-4" /> Git Diff Input
           </div>
           <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-4 min-h-0">
             <textarea
@@ -143,7 +143,7 @@ export function ReviewEngine() {
            {!activeTaskId ? (
              <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm flex-col gap-3">
                <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-2">
-                 <FileCode2 className="h-6 w-6 opacity-40" />
+                 <FileCode className="h-6 w-6 opacity-40" />
                </div>
                Waiting for diff input...
              </div>
@@ -171,7 +171,7 @@ export function ReviewEngine() {
            ) : isCompleted ? (
              <div className="flex-1 flex flex-col gap-4 overflow-hidden">
                <div className="bg-green-500/10 text-green-500 border border-green-500/20 rounded-md p-3 text-sm flex items-start gap-2 shrink-0">
-                 <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5" />
+                 <CheckCircle className="h-5 w-5 shrink-0 mt-0.5" />
                  <div>
                    <p className="font-semibold">Analysis Complete</p>
                    <p className="opacity-90 mt-0.5 text-xs">Awaiting your feedback on these suggestions to refine our False Positive Rates.</p>

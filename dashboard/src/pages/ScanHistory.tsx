@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-table'
 import { useScanHistory, useScanReport, ScanMetadata } from '@/hooks/useScanHistory'
 import * as Dialog from '@radix-ui/react-dialog'
-import { X, FileCode2 } from 'lucide-react'
+import { X, FileCode } from 'lucide-react'
 
 // --- DIALOG COMPONENT FOR MONGODB REPORTS ---
 function ReportDialog({ scanId, onClose }: { scanId: string | null, onClose: () => void }) {
@@ -30,7 +30,7 @@ function ReportDialog({ scanId, onClose }: { scanId: string | null, onClose: () 
           <div className="flex-1 overflow-auto border border-border rounded-md bg-muted/10 p-4 relative min-h-[300px]">
              {isLoading ? (
                <div className="absolute inset-0 flex items-center justify-center flex-col gap-3 text-muted-foreground animate-pulse">
-                  <FileCode2 className="h-8 w-8 opacity-40" />
+                  <FileCode className="h-8 w-8 opacity-40" />
                   <p className="text-sm">Retrieving payload from MongoDB...</p>
                </div>
              ) : data ? (

@@ -1,16 +1,20 @@
 import React from 'react'
-import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, History, FileCode, Code, Settings } from 'lucide-react'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { LayoutDashboard, History, FileCode, Code, Settings, UploadCloud, Activity, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { name: 'Dashboard', to: '/', icon: LayoutDashboard },
+  { name: 'Upload Project', to: '/upload', icon: UploadCloud },
   { name: 'Review Engine', to: '/review', icon: FileCode },
   { name: 'Rules Studio', to: '/rules', icon: Code },
+  { name: 'Metrics', to: '/metrics', icon: Activity },
   { name: 'Scan History', to: '/history', icon: History },
+  { name: 'Profile', to: '/profile', icon: User },
 ]
 
 export function Sidebar() {
+  const navigate = useNavigate()
   return (
     <aside className="w-64 border-r border-border bg-card flex flex-col hidden md:flex h-screen sticky top-0">
       <div className="h-16 flex items-center px-6 border-b border-border">

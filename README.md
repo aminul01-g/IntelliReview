@@ -8,160 +8,188 @@ pinned: false
 app_port: 7860
 ---
 
-<div align="center">
-  <!-- [Image 1: IntelliReview Branding] -->
-  <img src="docs/assets/branding.png" alt="IntelliReview Branding" width="600"/>
+<!-- [Image 1: IntelliReview Branding] -->
+![IntelliReview Branding](docs/assets/branding.png)
 
-  <h1>🛡️ IntelliReview</h1>
-  <p><em>AI-Powered Code Review Assistant</em></p>
+## 🛡️ IntelliReview
+**The Quality Gate for AI-Generated Code**
 
-  <!-- Badges integrated with SonarQube / DeepSource APIs (Placeholders) -->
-  <p>
-    <a href="#"><img src="https://img.shields.io/badge/build-passing-brightgreen.svg?style=for-the-badge" alt="Build Status"></a>
-    <a href="#"><img src="https://img.shields.io/badge/coverage-94%25-success.svg?style=for-the-badge" alt="Code Coverage"></a>
-    <a href="#"><img src="https://img.shields.io/badge/Health_Score-A-brightgreen.svg?style=for-the-badge" alt="Health Score"></a>
-    <a href="#"><img src="https://img.shields.io/badge/integration-SonarQube-4E9BCD.svg?style=for-the-badge" alt="SonarQube"></a>
-  </p>
-</div>
-
-## Table of Contents
-1. [Executive Overview](#executive-overview)
-2. [Core Module Deep-Dive](#core-module-deep-dive)
-   - [Dashboard](#dashboard)
-   - [Analysis Engine](#analysis-engine)
-   - [Custom Rules Engine](#custom-rules-engine)
-   - [Analysis History & Metrics](#analysis-history--metrics)
-3. [Architectural Specifications](#architectural-specifications)
-   - [Multi-Agent Orchestration](#multi-agent-orchestration)
-   - [MCP Intelligence](#mcp-intelligence)
-   - [GitHub App Lifecycle](#github-app-lifecycle)
-   - [Technical Debt Management](#technical-debt-management)
-4. [Installation & Setup](#installation--setup)
-5. [Roadmap: Evolutionary Outlook](#roadmap-evolutionary-outlook)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg?style=for-the-badge)](https://github.com/aminul01-g/IntelliReview/actions)
+[![Code Coverage](https://img.shields.io/badge/coverage-94%25-success.svg?style=for-the-badge)](https://github.com/aminul01-g/IntelliReview)
+[![Health Score](https://img.shields.io/badge/Health_Score-A-brightgreen.svg?style=for-the-badge)](https://github.com/aminul01-g/IntelliReview)
+[![SonarQube](https://img.shields.io/badge/integration-SonarQube-4E9BCD.svg?style=for-the-badge)](https://github.com/aminul01-g/IntelliReview)
 
 ---
 
-## Executive Overview
+## 📖 Executive Summary
 
-IntelliReview is a context-aware ecosystem designed to transcend traditional linting mechanisms. By employing a **hybrid reasoning paradigm**, the platform fundamentally bridges the gap between structured rule-checking and artificial intelligence. 
+In the era of AI-native software engineering, large language models (LLMs) are generating complex codebases in minutes. However, this velocity introduces severe risks: hallucinated APIs, subtle state management flaws, $O(n^2)$ regressions, and insecure cryptographic implementations.
 
-The system utilizes a **Deterministic + Generative** approach:
-- **Deterministic**: Extensively utilizes precise Abstract Syntax Tree (AST) parsing and predefined patterns to catch fundamental structural, style, and security flaws without hallucination.
-- **Generative**: Deploys localized Large Language Models over mathematically bounded scopes to supply context-aware reviews, actionable diff patches, and security rationale for complex software architectures.
+**IntelliReview** is an enterprise-grade, hybrid-reasoning static analysis platform. It acts as the definitive quality gate between AI-generated code and your production environment. By utilizing both deterministic AST parsing and specialized LLM agents, IntelliReview automatically reviews pull requests, exposes architectural drift, and tracks the longitudinal health of your codebase.
 
 ---
 
-## Core Module Deep-Dive
+## 🧠 The Hybrid Reasoning Paradigm
 
-### Dashboard
-<!-- [Image 2: Dashboard] -->
-![Dashboard Interface](docs/assets/dashboard.png)
+IntelliReview transcends traditional regex-based linters by uniting rigid structural analysis with cognitive contextual understanding:
 
-The IntelliReview Dashboard provides immediate insights into repository velocity and structural integrity. Central to the dashboard are the **Health Score** and **Technical Debt** metrics, which accurately track the evolution of code quality over time. These continuously updated indicators highlight deteriorating modules, allowing engineering teams to make data-driven decisions on when to pivot from feature building to refactoring.
-
-### Analysis Engine
-<!-- [Images 3, 4, 5: Analysis Engine] -->
-![Analysis Engine - Raw Code](docs/assets/analysis-raw.png)
-<br/>
-![Analysis Engine - Architecture](docs/assets/analysis-architecture.png)
-<br/>
-![Analysis Engine - Diff Review](docs/assets/analysis-diff.png)
-
-The Analysis Engine supports diverse workflows designed to accommodate specific developer needs through three distinct input modes:
-1. **Raw Code Pasting**: For immediate validation of snippets and functions during active development.
-2. **Project-Wide Uploads**: For comprehensive local evaluation (spanning both structural file hierarchy and isolated logic).
-3. **Diff Review**: Specialized mode mapped directly to standard `git diff` outputs, automatically scoping the analysis constraints precisely to the modified lines.
-
-### Custom Rules Engine
-<!-- [Image 6: Custom Rules Engine] -->
-![Custom Rules Engine](docs/assets/custom-rules.png)
-
-Project-specific standardization securely functions through the `.intellireview.yml` configuration system. This Custom Rules Engine enables technical leads and DevOps engineers to enforce strictly defined style guides and specialized security patterns dynamically. Instead of relying purely on generalized AI assertions, teams define precise regex or structural paradigms which the underlying engine applies natively during AST traversal.
-
-### Analysis History & Metrics
-<!-- [Images 7, 8: Analysis History & Metrics] -->
-![Analysis History](docs/assets/analysis-history.png)
-<br/>
-![Longitudinal Metrics](docs/assets/analysis-metrics.png)
-
-Focusing on measurable developer productivity, the History & Metrics modules offer longitudinal tracking mechanisms. Specifically, the system continually evaluates **Team Velocity** alongside **AI Suggestion Acceptance Rates**. Over cycles, this reveals the true utility and structural alignment of the AI propositions, continuously optimizing review parameters while providing high-level operational metrics to engineering stakeholders.
+1. **Deterministic Processing (AST Engine)**
+   The pipeline parses incoming code into Abstract Syntax Trees (ASTs). This phase ensures zero hallucinations when enforcing strict style guides, detecting known CWE vulnerabilities (e.g., SQL injections), and executing custom `yaml` programmatic rules.
+   
+2. **Generative Processing (Agentic Orchestration)**
+   Through a LangChain-based worker swarm, mathematically bounded code chunks are routed to hyper-specialized AI agents:
+   - **Architecture Agent**: Evaluates SOLID principle compliance and tight-coupling degradation.
+   - **Performance Agent**: Identifies algorithmic inefficiencies and memory leak risks.
+   - **Security Agent**: Infers logical bypass vulnerabilities undetected by standard static tools.
 
 ---
 
-## Architectural Specifications
+## ⚡ Core Modules
 
-### Multi-Agent Orchestration
-IntelliReview adopts an asynchronous orchestrator architecture using specialized LangChain-based worker agents. To conquer vast context windows while preventing hallucination, the orchestrator delegates complex evaluation loops to narrowly-scoped agents:
-- **Security Agent**: Identifies vulnerabilities, tracking CWE compliance, and validates data sanitization.
-- **Performance Agent**: Detects $O(n^2)$ degradations, memory leak potential, and optimal API payloads.
-- **Architecture Agent**: Evaluates SOLID principle adherence, module coupling, and scalable abstractions.
+### 🖥️ 1. Command Center & Metrics Dashboard
+The unified React-based frontend (`AppShell` architecture) provides actionable telemetry. Powered by `Recharts`, the dashboard highlights:
+- **Longitudinal Tracking**: Visualize AI suggestion acceptance rates and false-positive filtering over time.
+- **Language Distributions**: Aggregated statistics of stack utilization.
 
-### MCP Intelligence
-By integrating a robust **Model Context Protocol (MCP)** server, IntelliReview gains direct, real-time programmatic access to fundamental codebase semantics. Crucial capabilities include:
-- **AST-Based Indexing**: Structural comprehension of classes, interfaces, and function signatures.
-- **Symbol Searching**: Pinpointing exact structural usages rather than probabilistic text generation.
-- **Cross-File Dataflow Tracking**: Understanding state propagation, enabling the AI to flag systemic architectural flaws instead of single-file limitations.
+### 🔍 2. AI Review Engine & Diff Analysis
+A specialized interactive engine capable of ingesting raw code blobs, bulk repository directories, or standard unified git `diffs`. This restricts the AI's compute scope strictly to modified lines, slashing context window constraints and rapidly proposing direct branch remediations.
 
-### GitHub App Lifecycle
-Security routing operates via a comprehensive GitHub App framework, enforcing stringent operational permissions:
-- **JWT Identity Management**: Backend communication relies exclusively on mathematically validated JSON Web Tokens, decoupling identity state from susceptible cookie storage.
-- **Installation-Level Access Tokens**: The App mints repository-scoped, short-lived tokens ensuring fine-grained, minimally invasive permissions strictly configured for `Pull Request` comment capabilities and codebase read access.
+### 📜 3. Custom Rules Studio
+Engineering leaders can deploy `.intellireview.yml` configurations to enforce local architectural philosophies. Instead of fighting generic AI assumptions, teams bind specific regex paradigms or nested AST node requirements directly into the review pipeline. 
 
-### Technical Debt Management
-The platform utilizes quantitative formulas heavily integrated into TimescaleDB's tracking suite to deduce the **Health Score**. The core determination calculates the **Technical Debt Ratio (TDR)**:
+**Example `.intellireview.yml` Configuration:**
+```yaml
+version: "1.0"
+rules:
+  - id: "RESTRICT_EVAL"
+    severity: "critical"
+    pattern: "eval\\(.*\\)"
+    message: "Use of eval() is strictly prohibited."
+  - id: "ENFORCE_LOGGER"
+    severity: "high"
+    ast_node: "CallExpression"
+    pattern: "console.log"
+    message: "Use the internal `logger` module instead of console.log."
+```
 
-$$ TDR = \frac{\text{RemediationCost}}{\text{DevelopmentCost}} $$
+### 🧮 4. Technical Debt Aggregator
+Backed by **TimescaleDB** time-series data, IntelliReview calculates real-time **Technical Debt Ratios (TDR)** for every class and function:
 
-Whenever structural anomalies or code smells appear, the engine computes exact remediation hours against the aggregate development time required for that modular component, yielding an objective metric for evaluating maintenance requirements.
+$$ TDR = \frac{\text{Remediation Hours}}{\text{Original Development Hours}} $$
+
+This empirical measurement allows product managers to mathematically trigger maintenance cycles when $TDR > 0.15$.
 
 ---
 
-## Installation & Setup
+## 🔌 Integration Ecosystem
+
+### 🌐 GitHub App Identity & Lifecycle
+Rather than precarious PAT handling, IntelliReview establishes secure GitHub App communication channels. Relying on mathematically validated **JWTs** and short-lived, repository-scoped installation tokens, the system autonomously listens to PR Webhooks, reviews diffs, and injects actionable inline comments exactly where the code degraded.
+
+### 🤖 Model Context Protocol (MCP) Server
+IntelliReview operates an integrated **MCP Server**, exposing its core engine capabilities outward. Consequently, downstream AI agents (like Claude Code, Cursor, or Windsurf) can invoke `intellireview.analyze()` as a tool mid-generation, establishing an unprecedented auto-corrective loop.
+
+---
+
+## 🚀 Quickstart & Installation
+
+IntelliReview orchestrates its microservices through Docker, leveraging **FastAPI (Python)** for the backend APIs, **React + Vite** for the frontend interfaces, and **Redis/Celery** for asynchronous task queuing.
 
 ### Prerequisites
-- Node.js `18+`
-- Python `3.11+`
-- PostgreSQL (with TimescaleDB extension for longitudinal tracking)
-- Redis (for Celery and Agent queuing)
+- Node.js (v18+)
+- Python (v3.11+)
+- PostgreSQL (with `timescaledb` extension)
+- Redis Server
 
-### Backend Setup (FastAPI & Agents)
+### 1. Backend API via FastAPI
 ```bash
-# 1. Clone & Enter backend directory
+# Clone the repository
 git clone https://github.com/aminul01-g/IntelliReview.git
-cd IntelliReview
+cd IntelliReview/backend
 
-# 2. Virtual Environment Setup
+# Initialize virtual environment and install dependencies
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 3. Environment Variables
-cp .env.example .env
-# Edit .env to supply POSTGRES_URL, REDIS_URL, and LLM API Keys
-
-# 4. Initialize Database and run the API
+# Migrate schema and boot the server
+cp .env.example .env # Configure Postgres, Redis, and OpenAI endpoints
 alembic upgrade head
 uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Frontend Setup (React Dashboard)
+### 2. Frontend Dashboard via Vite
 ```bash
-# 1. Navigate to frontend module
-cd frontend
+# Navigate to the frontend workspace (recently overhauled with Vite/Tailwind)
+cd ../dashboard
 
-# 2. Install dependencies
+# Install React dependencies and start the development server
 npm install
-
-# 3. Start development server
 npm run dev
 ```
-> The React interface will natively bind to `http://localhost:3000` assuming standard port mapping.
+> The premium web interface will be reliably served at `http://localhost:5173`.
 
 ---
 
-## Roadmap: Evolutionary Outlook
+## 🛠️ Usage & Operations
 
-To further reinforce continuous integration pipelines, upcoming major features focus on deployment rigidity and systemic autofixes:
-- **IDE Extensions**: Direct gutter diagnostics and code lenses integrated into VS Code / JetBrains environments avoiding context-switching.
-- **Hard-Blocking PR Gates**: CI actions enabling configurable thresholds (e.g., automatically blocking Pull Requests that exceed a `0.15` TDR rating).
-- **Agentic Remediation (Autofix)**: Transitioning from purely diagnostic alerts to direct branch creations with auto-applicable deterministic patches via `diff` blocks.
+IntelliReview can be invoked in several ways depending on your CI/CD and developer workflows:
+
+### 1. Direct Analysis via CLI
+You can utilize the platform directly from any terminal to vet code instantly before pushing to version control.
+```bash
+# Analyze a specific project directory
+intellireview analyze ./src --strict
+
+# Generate a JSON output for CI pipelines
+intellireview analyze ./backend --format=json > report.json
+```
+
+### 2. GitHub Pull Request Bot
+Once installed via the GitHub App integration, IntelliReview will automatically subscribe to tracking events.
+- Simply open a Pull Request.
+- IntelliReview will post a top-level **Executive Summary** detailing the Technical Debt trajectory.
+- The Engine will inject **Inline Diff Comments** explicitly alongside lines that trigger security or structural alarms.
+
+### 3. MCP Agent Invocation
+For users of tools like **Cursor** or **Claude Code**, configure your agent's MCP settings to point to the IntelliReview internal socket:
+```json
+{
+  "mcpServers": {
+    "intellireview": {
+      "command": "python",
+      "args": ["-m", "intellireview.mcp"]
+    }
+  }
+}
+```
+*Your agent will now self-correct using IntelliReview's rule subsets.*
+
+---
+
+## 🗺️ Strategic Roadmap
+
+- **Phase 1: Agentic Remediation** — Transitioning from posting passive inline GitHub PR comments to automatically opening secondary "fix" branches with applied diff patches.
+- **Phase 2: IDE Gutter Integration** — Direct VS Code / JetBrains daemon integration, analyzing context buffers synchronously to prevent flawed code from ever reaching remote Git origins.
+- **Phase 3: Multi-LLM Consensus Verification** — Injecting Mistral & Llama auxiliary verification nodes to vote on issues detected by the primary model, driving false-positive rates effectively to zero.
+
+---
+
+## 🤝 Contributing
+
+We believe that code quality is a community-driven initiative. Whether you want to add a new AST language parser, tune the LangChain orchestrator, or improve the React dashboard:
+1. **Fork** the repository and create your feature branch: `git checkout -b feature/amazing-feature`
+2. **Commit** your changes adhering to conventional commits: `git commit -m 'feat: added amazing feature'`
+3. **Push** to the branch and open a Pull Request.
+
+Please review our `CONTRIBUTING.md` for our full development lifecycle and testing requirements.
+
+---
+
+## 📄 License
+
+Distributed under the **Apache 2.0 License**. See `LICENSE` for more information.
+
+---
+
+*IntelliReview: Because even AI needs a senior engineer in its corner.*

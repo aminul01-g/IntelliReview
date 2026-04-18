@@ -1,0 +1,9 @@
+{
+  "name": "intellireview",
+  "private": true,
+  "scripts": {
+    "postinstall": "cd dashboard && npm install",
+    "build": "cd dashboard && npm run build",
+    "start": "cd dashboard && npm run preview -- --host 0.0.0.0 --port ${PORT:-7860}"
+  }
+}

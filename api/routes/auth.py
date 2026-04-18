@@ -128,6 +128,34 @@ async def logout(response: Response):
     response.delete_cookie(**cookie_kwargs)
     return {"message": "Logged out successfully"}
 
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+    response: Response,
+    current_user: User = Depends(get_current_user)
+):
+    """Silently refresh the JWT access token to prevent session expiry."""
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": current_user.username},
+        expires_delta=access_token_expires
+    )
+    
+    cookie_kwargs = {
+        "key": "auth_token",
+        "value": access_token,
+        "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "httponly": True,
+    }
+    if settings.DEBUG or not settings.COOKIE_DOMAIN:
+        cookie_kwargs["secure"] = False
+        cookie_kwargs["samesite"] = "lax"
+    else:
+        cookie_kwargs["secure"] = True
+        cookie_kwargs["samesite"] = "none"
+        cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
+    response.set_cookie(**cookie_kwargs)
+    return {"access_token": access_token, "token_type": "bearer"}
+
 # ==========================================
 # Enterprise SSO / OAuth Integrations (Phase 5)
 # ==========================================

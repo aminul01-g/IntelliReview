@@ -8,10 +8,12 @@ celery_app = Celery(
     "intellireview_tasks",
     broker=redis_url,
     backend=redis_url,
-    include=["api.tasks.analysis_tasks"]
+    include=["api.tasks.analysis_tasks", "api.tasks.rollup_tasks"]
 )
 
 # Core configuration
+from celery.schedules import crontab
+
 celery_app.conf.update(
     task_serializer='json',
     accept_content=['json'],
@@ -27,4 +29,20 @@ celery_app.conf.update(
     # The exponential countdown is computed inside _backoff_countdown().
     task_acks_late=True,       # Re-queue task if worker dies mid-flight
     task_reject_on_worker_lost=True,
+
+    # ── Task Routing & Priorities ────────────────────────────────────
+    task_routes={
+        'api.tasks.analysis_tasks._process_upload_async': {'queue': 'bulk'},
+        'api.tasks.rollup_tasks.*': {'queue': 'celery'},
+        # Fast snippet tasks go to express queue
+        'api.tasks.analysis_tasks.analyze_snippet': {'queue': 'express'}
+    },
+
+    # ── Periodic Tasks (Beat) ────────────────────────────────────────
+    beat_schedule={
+        'daily-metrics-rollup': {
+            'task': 'api.tasks.rollup_tasks.aggregate_metrics_task',
+            'schedule': crontab(hour=0, minute=0), # Run daily at midnight UTC
+        },
+    }
 )

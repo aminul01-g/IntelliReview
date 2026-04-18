@@ -12,7 +12,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from api.middleware.resilience import LLMResilienceMiddleware
 
 from config.settings import settings
-from api.routes import analysis, auth, metrics, feedback, webhooks, history, oauth_device, review_feedback, policies
+from api.routes import analysis, auth, metrics, feedback, webhooks, history, oauth_device, review_feedback, policies, queue_status
 from api.database import engine, Base
 
 # Ensure all models are loaded before create_all
@@ -78,6 +78,7 @@ app.include_router(feedback.router, prefix=f"{settings.API_PREFIX}/feedback", ta
 app.include_router(history.router, prefix=f"{settings.API_PREFIX}/history", tags=["History"], dependencies=protected_dependencies)
 app.include_router(review_feedback.router, prefix=f"{settings.API_PREFIX}/review-feedback", tags=["Review Feedback"], dependencies=protected_dependencies)
 app.include_router(policies.router, prefix=f"{settings.API_PREFIX}/policies", tags=["Policies"], dependencies=protected_dependencies)
+app.include_router(queue_status.router, prefix=f"{settings.API_PREFIX}", tags=["System"], dependencies=protected_dependencies)
 
 @app.get("/health")
 @limiter.limit("60/minute")

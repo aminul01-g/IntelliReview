@@ -78,7 +78,8 @@ export function Dashboard() {
   }
 
   // Prepare chart data
-  const healthData = (trends || []).map((t: any) => ({ name: t.date, score: t.count }));
+  const isDemoMode = import.meta.env.VITE_DEMO_MODE === 'true';
+  const healthData = isDemoMode ? (trends || []).map((t: any) => ({ name: t.date, score: t.count })) : [];
   const debtData = [
     { name: 'This Week', hours: userMetrics?.technical_debt_hours ?? 0 },
   ];
@@ -93,12 +94,12 @@ export function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
          <MetricCard 
            title="Health Score" 
-           value={userMetrics ? `${Math.min(100, 80 + (userMetrics.weekly_analyses || 0))}/100` : '--'}
+           value={userMetrics ? (isDemoMode ? `${Math.min(100, 80 + (userMetrics.weekly_analyses || 0))}/100` : `${userMetrics.health_score ?? '--'}/100`) : '--'}
            icon={Activity} 
            data={healthData} 
            dataKey="score" 
            color="hsl(var(--primary))" 
-           trend={userMetrics ? Math.round((userMetrics.weekly_analyses || 0) * 2) : 0} 
+           trend={userMetrics ? (isDemoMode ? Math.round((userMetrics.weekly_analyses || 0) * 2) : 0) : 0} 
          />
          <MetricCard 
            title="Tech Debt Hours" 
@@ -107,7 +108,7 @@ export function Dashboard() {
            data={debtData} 
            dataKey="hours" 
            color="hsl(var(--destructive))" 
-           trend={userMetrics ? -Math.round((userMetrics.technical_debt_hours || 0) / 2) : 0} 
+           trend={userMetrics ? (isDemoMode ? -Math.round((userMetrics.technical_debt_hours || 0) / 2) : 0) : 0} 
          />
          <div className="bg-card border border-border rounded-xl p-5 flex flex-col gap-4 shadow-sm h-36 justify-between hover:shadow-md transition-shadow group">
             <div className="flex items-center gap-2 text-muted-foreground font-medium text-sm tracking-wide max-w-fit bg-muted/30 px-3 py-1.5 rounded-full border border-border/50 group-hover:bg-muted/50 transition-colors">
@@ -133,26 +134,28 @@ export function Dashboard() {
          </div>
       </div>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 border border-border rounded-xl bg-card p-6 shadow-sm hover:shadow-md transition-shadow">
-           <h3 className="font-semibold text-lg mb-6 tracking-tight flex items-center gap-3">
-             <Activity className="h-5 w-5 text-primary" />
-             False Positive Reduction Trajectory
-           </h3>
-           <div className="h-[300px] w-full flex items-center justify-center border-2 border-dashed border-border/50 rounded-lg bg-muted/5 text-muted-foreground">
-              [Telemetry Moving Averages Graph Render]
-           </div>
+      {isDemoMode && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 border border-border rounded-xl bg-card p-6 shadow-sm hover:shadow-md transition-shadow">
+             <h3 className="font-semibold text-lg mb-6 tracking-tight flex items-center gap-3">
+               <Activity className="h-5 w-5 text-primary" />
+               False Positive Reduction Trajectory
+             </h3>
+             <div className="h-[300px] w-full flex items-center justify-center border-2 border-dashed border-border/50 rounded-lg bg-muted/5 text-muted-foreground">
+                [Telemetry Moving Averages Graph Render]
+             </div>
+          </div>
+          <div className="border border-border rounded-xl bg-card p-6 shadow-sm hover:shadow-md transition-shadow">
+             <h3 className="font-semibold text-lg mb-6 tracking-tight flex items-center gap-3">
+               <Clock className="h-5 w-5 text-primary" />
+               Rules Firing Frequency
+             </h3>
+             <div className="h-[300px] w-full flex items-center justify-center border-2 border-dashed border-border/50 rounded-lg bg-muted/5 text-muted-foreground">
+                [Radar Chart Render]
+             </div>
+          </div>
         </div>
-        <div className="border border-border rounded-xl bg-card p-6 shadow-sm hover:shadow-md transition-shadow">
-           <h3 className="font-semibold text-lg mb-6 tracking-tight flex items-center gap-3">
-             <Clock className="h-5 w-5 text-primary" />
-             Rules Firing Frequency
-           </h3>
-           <div className="h-[300px] w-full flex items-center justify-center border-2 border-dashed border-border/50 rounded-lg bg-muted/5 text-muted-foreground">
-              [Radar Chart Render]
-           </div>
-        </div>
-      </div>
+      )}
     </div>
   )
 }

@@ -28,6 +28,7 @@ class Metrics(BaseModel):
     complexity: Optional[float] = None
     maintainability_index: Optional[float] = None
     duplication_percentage: Optional[float] = None
+    cognitive_complexity: Optional[int] = None
 
 class AnalysisResponse(BaseModel):
     """Response schema for analysis."""

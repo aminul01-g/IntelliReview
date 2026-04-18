@@ -21,6 +21,10 @@ class Analysis(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
     
+    # Versioning
+    rule_version = Column(String(50), nullable=True)
+    schema_version = Column(String(50), nullable=False, server_default="1.0.0")
+    
     # Relationships
     user = relationship("User", backref="analyses")
     project = relationship("Project", backref="analyses")

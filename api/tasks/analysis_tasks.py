@@ -196,6 +196,10 @@ async def _process_upload_async(self, task_id: str, user_id: int):
     except Exception as e:
         logger.warning(f"RAG context indexing failed: {e}")
 
+    # Initialize Custom Rule Engine for cross-pollination
+    from analyzer.rules.custom_rules import CustomRuleEngine
+    custom_rule_engine = CustomRuleEngine(rules=[]) # Project-specific rules can be loaded here from DB
+
     for idx, file_info in enumerate(valid_files):
         self.update_state(state='AST_SCANNING', meta={'status': f'Scanning [{idx+1}/{len(valid_files)}] {file_info["filename"]}...'})
         try:
@@ -212,6 +216,7 @@ async def _process_upload_async(self, task_id: str, user_id: int):
             security_issues = security_scanner.scan(code, fname, lang)
             quality_issues = quality_detector.detect(code, fname, lang)
             ai_patterns = ai_pattern_detector.detect(code, fname, lang)
+            custom_rule_issues = custom_rule_engine.evaluate(code, fname, lang)
             
             file_idx = next((i for i, f in enumerate(valid_files) if f["filename"] == fname), None)
             cross_file_context = None
@@ -221,7 +226,7 @@ async def _process_upload_async(self, task_id: str, user_id: int):
                 except Exception:
                     pass
             
-            all_issues = antipatterns + security_issues + quality_issues + ai_patterns
+            all_issues = antipatterns + security_issues + quality_issues + ai_patterns + custom_rule_issues
             for dup in duplicates:
                 all_issues.append({
                     "type": "code_duplication",
@@ -240,7 +245,8 @@ async def _process_upload_async(self, task_id: str, user_id: int):
                 "lines_of_code": metrics_data.get("lines_of_code", file_info["lines"]),
                 "complexity": metrics_data.get("average_complexity"),
                 "maintainability_index": metrics_data.get("maintainability_index"),
-                "duplication_percentage": round(len(duplicates) / max(file_info["lines"], 1) * 100, 1)
+                "duplication_percentage": round(len(duplicates) / max(file_info["lines"], 1) * 100, 1),
+                "cognitive_complexity": metrics_data.get("cognitive_complexity")
             }
             
             code_hash = hashlib.sha256(code.encode()).hexdigest()
@@ -255,7 +261,9 @@ async def _process_upload_async(self, task_id: str, user_id: int):
                 issues=all_issues,
                 metrics=metrics_dict,
                 processing_time=round(time.time() - start_time, 2),
-                completed_at=datetime.utcnow()
+                completed_at=datetime.utcnow(),
+                schema_version="1.0.0",
+                rule_version=custom_rule_engine.get_version() if hasattr(custom_rule_engine, 'get_version') else None
             )
             db.add(analysis_rec)
             db.commit()

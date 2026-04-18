@@ -78,13 +78,23 @@ async def analyze_code(
     # Create analysis record
     code_hash = hashlib.sha256(request.code.encode()).hexdigest()
     
+    # Versioning
+    schema_version = "1.0.0"
+    # Try to get rule version from CustomRuleEngine if possible
+    try:
+        rule_version = custom_rule_engine.get_version() if hasattr(custom_rule_engine, 'get_version') else None
+    except Exception:
+        rule_version = None
+
     analysis = Analysis(
         user_id=current_user.id,
         file_path=request.file_path or "unknown",
         language=request.language,
         code_hash=code_hash,
         original_code=request.code,
-        status="pending"
+        status="pending",
+        schema_version=schema_version,
+        rule_version=rule_version
     )
     
     db.add(analysis)
@@ -98,6 +108,10 @@ async def analyze_code(
         
         # Parallelize independent detectors
         import asyncio
+        from analyzer.rules.custom_rules import CustomRuleEngine
+        
+        custom_rules = request.options.get('custom_rules', []) if request.options else []
+        custom_rule_engine = CustomRuleEngine(rules=custom_rules)
         
         # 1. Run all static scanners in parallel
         static_tasks = [
@@ -105,14 +119,15 @@ async def analyze_code(
             asyncio.to_thread(duplication_detector.detect, request.code),
             asyncio.to_thread(antipattern_detector.detect, request.code, ast, request.language),
             asyncio.to_thread(security_scanner.scan, request.code, request.file_path or "temp.py", request.language),
-            asyncio.to_thread(quality_detector.detect, request.code, request.file_path or "temp.py", request.language)
+            asyncio.to_thread(quality_detector.detect, request.code, request.file_path or "temp.py", request.language),
+            asyncio.to_thread(custom_rule_engine.evaluate, request.code, request.file_path or "temp.py", request.language)
         ]
         
-        metrics_data, duplicates, antipatterns, security_issues, quality_issues = await asyncio.gather(*static_tasks)
+        metrics_data, duplicates, antipatterns, security_issues, quality_issues, custom_rule_issues = await asyncio.gather(*static_tasks)
         
         # Combine all issues
         ai_patterns = ai_pattern_detector.detect(request.code, request.file_path or "unknown", request.language)
-        all_issues = antipatterns + security_issues + quality_issues + ai_patterns
+        all_issues = antipatterns + security_issues + quality_issues + ai_patterns + custom_rule_issues
         
         # Add duplication issues
         for dup in duplicates:
@@ -129,41 +144,68 @@ async def analyze_code(
         pattern_learner = PatternLearner()
         
         filtered_issues = []
-        ai_tasks = []
-        
-        # High severity issue limit for AI suggestions
-        ai_limit = 5
-        ai_count = 0
-
         for issue in all_issues:
             if not pattern_learner.should_suggest(issue.get("type", "unknown")):
                 continue
-                
-            if issue.get("severity") in ["critical", "high"] and ai_count < ai_limit:
-                ai_tasks.append(suggestion_generator.generate_suggestion_async(
-                    request.code,
-                    issue,
-                    request.language
-                ))
-                ai_count += 1
-                # Use a flag to identify this issue needs AI update
-                issue["_needs_ai"] = True
-            
             filtered_issues.append(issue)
+
+        # Context-Assembly: Group issues by line proximity before hitting LLM
+        clusters = []
+        for issue in filtered_issues:
+            if issue.get("severity") in ["critical", "high"]:
+                line = issue.get("line", 1)
+                matched_cluster = None
+                for c in clusters:
+                    if abs(c["center_line"] - line) <= 15:
+                        matched_cluster = c
+                        break
+                if matched_cluster:
+                    matched_cluster["issues"].append(issue)
+                    lines = [i.get("line", 1) for i in matched_cluster["issues"]]
+                    matched_cluster["center_line"] = sum(lines) // len(lines)
+                else:
+                    clusters.append({"center_line": line, "issues": [issue]})
+
+        ai_tasks = []
+        ai_limit = 5
+        
+        for cluster in clusters[:ai_limit]:
+            # Create a composite context package for the LLM
+            combined_message = "; ".join([f"L{i.get('line', '?')}: {i.get('message', '')}" for i in cluster["issues"]])
+            combined_type = "+".join(list(set([i.get("type", "mixed") for i in cluster["issues"]])))
+            
+            composite_issue = {
+                "type": combined_type,
+                "severity": "high",
+                "line": cluster["center_line"],
+                "message": f"Clustered Issues: {combined_message}"
+            }
+            
+            ai_tasks.append(suggestion_generator.generate_suggestion_async(
+                request.code,
+                composite_issue,
+                request.language
+            ))
+            for i in cluster["issues"]:
+                i["_ai_cluster_ref"] = composite_issue
 
         # Run AI suggestions in parallel
         if ai_tasks:
             ai_results = await asyncio.gather(*ai_tasks)
             
             # Map results back to issues
-            res_idx = 0
             for issue in filtered_issues:
-                if issue.get("_needs_ai"):
-                    ai_suggestion = ai_results[res_idx]
-                    issue["suggestion"] = ai_suggestion.get("suggestion", issue.get("suggestion"))
-                    issue["confidence"] = ai_suggestion.get("confidence", 0.5)
-                    del issue["_needs_ai"]
-                    res_idx += 1
+                if "_ai_cluster_ref" in issue:
+                    cluster_ref = issue["_ai_cluster_ref"]
+                    # Find which task it corresponded to
+                    try:
+                        res_idx = [c["center_line"] for c in clusters[:ai_limit]].index(cluster_ref["center_line"])
+                        ai_suggestion = ai_results[res_idx]
+                        issue["suggestion"] = ai_suggestion.get("suggestion", issue.get("suggestion"))
+                        issue["confidence"] = ai_suggestion.get("confidence", 0.5)
+                    except ValueError:
+                        pass
+                    del issue["_ai_cluster_ref"]
         
         enhanced_issues = filtered_issues
 
@@ -214,7 +256,8 @@ async def analyze_code(
             "lines_of_code": metrics_data.get("lines_of_code", len(request.code.split('\n'))),
             "complexity": metrics_data.get("average_complexity"),
             "maintainability_index": metrics_data.get("maintainability_index"),
-            "duplication_percentage": len(duplicates) / max(len(request.code.split('\n')), 1) * 100
+            "duplication_percentage": len(duplicates) / max(len(request.code.split('\n')), 1) * 100,
+            "cognitive_complexity": metrics_data.get("cognitive_complexity")
         }
 
         analysis.status = "completed"

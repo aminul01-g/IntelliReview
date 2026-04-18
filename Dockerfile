@@ -31,6 +31,13 @@ COPY --from=frontend-builder /app/dashboard/dist /app/dashboard/dist
 # Create necessary directories
 RUN mkdir -p logs chroma_db
 
+# Verify frontend build exists and is not just the source index.html
+RUN if [ -d "/app/dashboard/dist" ]; then \
+        echo "Frontend build verified"; \
+    else \
+        echo "ERROR: Frontend build missing!" && exit 1; \
+    fi
+
 # Expose HF Spaces default port
 EXPOSE 7860
 

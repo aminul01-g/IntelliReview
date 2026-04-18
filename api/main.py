@@ -87,25 +87,36 @@ async def health_check(request: Request):
     return {"status": "healthy"}
 
 # Serve Frontend SPA
-if os.path.exists("dashboard/dist"):
-    # Mount Vite's generated assets directory caching
-    app.mount("/assets", StaticFiles(directory="dashboard/dist/assets"), name="assets")
+FRONTEND_DIST = "dashboard/dist"
+if os.path.exists(FRONTEND_DIST):
+    print(f"✅ Frontend assets found at {FRONTEND_DIST}. Enabling SPA hosting.")
+    # Mount Vite's generated assets directory
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
 
-    # Catch-all route to support React Router SPA behavior
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        # Ignore actual API paths
-        if full_path.startswith("api/v1/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
+    async def serve_spa(request: Request, full_path: str):
+        # 1. Ignore actual API paths, docs, and assets (assets handled by mount)
+        api_prefix = settings.API_PREFIX.lstrip("/")
+        if (full_path.startswith(api_prefix) or 
+            full_path.startswith("docs") or 
+            full_path.startswith("openapi.json") or
+            full_path.startswith("assets/")):
             raise HTTPException(status_code=404, detail="Not Found")
             
-        # Serve exact file if it exists (e.g. /favicon.ico, /vite.svg)
-        file_path = os.path.join("dashboard/dist", full_path)
-        if os.path.isfile(file_path):
+        # 2. Serve exact file if it exists at the root of dist (e.g. favicon.ico, vite.svg)
+        file_path = os.path.join(FRONTEND_DIST, full_path)
+        if full_path and os.path.isfile(file_path):
             return FileResponse(file_path)
             
-        # Fallback to SPA entrypoint
-        return FileResponse("dashboard/dist/index.html")
+        # 3. Fallback to SPA entrypoint for UI routes
+        # IMPORTANT: If the path looks like a file (has an extension) but wasn't found, 
+        # do NOT return index.html as it causes 'Unexpected token <' errors in the browser.
+        if "." in full_path.split("/")[-1] and not full_path.endswith(".html"):
+            raise HTTPException(status_code=404, detail="Static asset not found")
+
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 else:
+    print(f"⚠️ Frontend assets NOT found at {FRONTEND_DIST}. Running in API-only mode.")
     @app.get("/")
     @limiter.limit("60/minute")
     async def root(request: Request):

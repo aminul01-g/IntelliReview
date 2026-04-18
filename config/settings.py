@@ -1,8 +1,9 @@
-from pydantic import Field, validator
+from pydantic import ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings
 from typing import Optional, List
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file='.env', case_sensitive=True)
     # Application
     APP_NAME: str = "IntelliReview"
     APP_VERSION: str = "1.0.0"
@@ -59,9 +60,9 @@ class Settings(BaseSettings):
     
     # Analysis
     MAX_FILE_SIZE: int = 10000  # lines
-    SUPPORTED_LANGUAGES: list = ["python", "javascript", "java"]
+    SUPPORTED_LANGUAGES: list[str] = ["python", "javascript", "java"]
     ANALYSIS_TIMEOUT: int = 30  # seconds
-    
+
     # Celery
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
@@ -75,24 +76,20 @@ class Settings(BaseSettings):
             return "sqlite:///./sqlite.db"
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
     
-    @validator("ALLOWED_ORIGINS")
+    @field_validator("ALLOWED_ORIGINS")
     def validate_origins(cls, v):
-        if not v or v == "*":
+        if not v or v.strip() == "" or v.strip() == "*":
             raise ValueError("ALLOWED_ORIGINS cannot be empty or wildcard in production")
         return v
 
-    @validator("SECRET_KEY")
-    def validate_secret_key(cls, v):
-        if "change-in-production" in v or len(v) < 32:
-             # Only strictly enforce in non-debug mode, or warn? 
-             # The plan says fail. But user might be in dev. 
-             # Let's enforce length but maybe allow default if DEBUG is true? 
-             # Plan said "Required env var".
-             # I will stick to the plan but provide a helpful error message if it fails.
-             pass
-        # Basic check
+    @field_validator("SECRET_KEY")
+    def validate_secret_key(cls, v, info):
+        if "change-in-production" in v and not info.data.get("DEBUG", True):
+            raise ValueError(
+                "SECRET_KEY must be changed in production and may not use the default placeholder string."
+            )
         if len(v) < 32:
-            raise ValueError("SECRET_KEY must be >= 32 characters.")
+            raise ValueError("SECRET_KEY must be at least 32 characters.")
         return v
     
     class Config:

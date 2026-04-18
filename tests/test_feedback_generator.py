@@ -31,7 +31,7 @@ from api.schemas.feedback_schemas import (
     SeverityLevel,
     SEVERITY_MARKERS,
     SEVERITY_LABELS,
-    TestCase,
+    TestCase as FeedbackTestCase,
     VerificationEntry,
     VerificationWalkthrough,
 )

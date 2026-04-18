@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import * as Lucide from 'lucide-react'
 
 const { FileCode, Play, AlertCircle, CheckCircle, ShieldAlert, Check, X } = Lucide as any
@@ -121,29 +121,48 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any, taskId?: stri
   )
 }
 
-export function ReviewEngine() {
   const [diffInput, setDiffInput] = useState('');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [timeoutReached, setTimeoutReached] = useState(false);
+  const [fallbackDetected, setFallbackDetected] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const submitMutation = useSubmitAnalysis();
   const { data: taskData, isLoading: isPolling } = useAnalysisTaskStatus(activeTaskId);
 
+  useEffect(() => {
+    setTimeoutReached(false);
+    setFallbackDetected(false);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if ((taskData?.status === 'processing' || taskData?.status === 'pending') && activeTaskId) {
+      timeoutRef.current = setTimeout(() => {
+        setTimeoutReached(true);
+      }, 60000); // 60 seconds
+    }
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [activeTaskId]);
+
+  useEffect(() => {
+    if (taskData?.fallback === true) {
+      setFallbackDetected(true);
+    }
+  }, [taskData]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!diffInput.trim()) return;
-    // Only send the diff, as expected by backend
     submitMutation.mutate({ diff: diffInput }, {
       onSuccess: (data: any) => {
         setActiveTaskId(data.task_id);
       }
     });
-  }
+  };
 
   const isAnalyzing = (isPolling && activeTaskId) || taskData?.status === 'processing' || taskData?.status === 'pending';
   const isCompleted = taskData?.status === 'completed';
   const isFailed = taskData?.status === 'failed';
-
-  // Only use real issues from backend
   const issues = taskData?.result?.issues || [];
 
   return (
@@ -200,18 +219,34 @@ export function ReviewEngine() {
              </div>
            ) : isAnalyzing ? (
              <div className="flex-1 flex flex-col gap-5 pt-4">
-               {/* Skeleton Loaders */}
-                <div className="space-y-3">
-                  <div className="h-5 w-3/4 bg-muted rounded animate-pulse"></div>
-                  <div className="h-4 w-1/2 bg-muted/60 rounded animate-pulse"></div>
-                </div>
-                <div className="space-y-2 mt-4">
-                  <div className="h-32 w-full bg-muted/40 rounded border border-border/50 animate-pulse"></div>
-                  <div className="flex gap-2 pt-2">
-                     <div className="h-8 w-24 bg-muted/60 rounded animate-pulse"></div>
-                     <div className="h-8 w-24 bg-muted/60 rounded animate-pulse"></div>
-                  </div>
-                </div>
+               {timeoutReached ? (
+                 <div className="flex flex-col items-center justify-center gap-3 text-yellow-600 bg-yellow-100 border border-yellow-300 rounded p-4">
+                   <AlertCircle className="h-8 w-8" />
+                   <span className="font-semibold">Analysis is taking longer than expected.</span>
+                   <span className="text-sm">If this persists, please check your backend worker or try again later.</span>
+                 </div>
+               ) : fallbackDetected ? (
+                 <div className="flex flex-col items-center justify-center gap-3 text-orange-600 bg-orange-100 border border-orange-300 rounded p-4">
+                   <AlertCircle className="h-8 w-8" />
+                   <span className="font-semibold">Backend is in fallback mode.</span>
+                   <span className="text-sm">The backend could not process your request normally. Please check your API keys, backend logs, or try again later.</span>
+                 </div>
+               ) : (
+                 <>
+                   {/* Skeleton Loaders */}
+                   <div className="space-y-3">
+                     <div className="h-5 w-3/4 bg-muted rounded animate-pulse"></div>
+                     <div className="h-4 w-1/2 bg-muted/60 rounded animate-pulse"></div>
+                   </div>
+                   <div className="space-y-2 mt-4">
+                     <div className="h-32 w-full bg-muted/40 rounded border border-border/50 animate-pulse"></div>
+                     <div className="flex gap-2 pt-2">
+                       <div className="h-8 w-24 bg-muted/60 rounded animate-pulse"></div>
+                       <div className="h-8 w-24 bg-muted/60 rounded animate-pulse"></div>
+                     </div>
+                   </div>
+                 </>
+               )}
              </div>
            ) : isFailed ? (
              <div className="flex-1 flex items-center justify-center text-destructive flex-col gap-2">

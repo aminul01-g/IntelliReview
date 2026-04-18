@@ -5,11 +5,15 @@ import operator
 
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI
-    from langchain_core.prompts import ChatPromptTemplate
-    from langchain_core.output_parsers import PydanticOutputParser
-    from langgraph.graph import StateGraph, END
 except ImportError:
-    pass
+    ChatGoogleGenerativeAI = None
+try:
+    from langchain_community.llms import HuggingFaceHub
+except ImportError:
+    HuggingFaceHub = None
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from langgraph.graph import StateGraph, END
 
 class Finding(BaseModel):
     category: str = Field(description="Category of the finding, e.g., 'Security', 'Performance', 'Architecture'")
@@ -35,24 +39,47 @@ class GraphState(TypedDict):
     architecture_findings: List[Finding]
     final_review: Optional[FinalReview]
 
+
 class PRReviewOrchestrator:
+    def _log_timing(self, label: str, start: float, end: float):
+        print(f"[PROFILE] {label}: {end - start:.2f} seconds")
+
     """
     Multi-Agent PR Review Orchestrator using LangGraph and LangChain.
-    Decomposes review into Security, Performance, and Architecture.
+    Supports both Google Gemini (if GOOGLE_API_KEY is set) and Hugging Face (if HUGGINGFACE_API_KEY is set).
     """
-    def __init__(self, google_api_key: Optional[str] = None, model_name: str = "gemini-2.0-pro-exp-02-05"):
-        self.api_key = google_api_key or os.getenv("GOOGLE_API_KEY")
-        if not self.api_key:
-            print("Warning: GOOGLE_API_KEY not set for PRReviewOrchestrator")
-        
-        self.llm = ChatGoogleGenerativeAI(
-            model=model_name, 
-            google_api_key=self.api_key,
-            temperature=0.2
-        ) if self.api_key else None
-        
+    def __init__(self, backend: str = None, model_name: str = None, huggingface_api_key: Optional[str] = None, google_api_key: Optional[str] = None):
+        self.google_api_key = google_api_key or os.getenv("GOOGLE_API_KEY")
+        self.huggingface_api_key = huggingface_api_key or os.getenv("HUGGINGFACE_API_KEY")
+        self.backend = backend or ("google" if self.google_api_key else "huggingface")
+        if self.backend == "google":
+            if not self.google_api_key or not ChatGoogleGenerativeAI:
+                raise RuntimeError("Google backend selected but GOOGLE_API_KEY or langchain_google_genai is not available.")
+            self.llm = ChatGoogleGenerativeAI(
+                model=model_name or "gemini-2.0-pro-exp-02-05",
+                google_api_key=self.google_api_key,
+                temperature=0.2
+            )
+        elif self.backend == "huggingface":
+            if not self.huggingface_api_key or not HuggingFaceHub:
+                raise RuntimeError("Hugging Face backend selected but HUGGINGFACE_API_KEY or langchain_community.llms.HuggingFaceHub is not available.")
+            self.llm = HuggingFaceHub(
+                repo_id=model_name or "HuggingFaceH4/zephyr-7b-beta",
+                huggingfacehub_api_token=self.huggingface_api_key,
+                temperature=0.2
+            )
+        else:
+            raise RuntimeError(f"Unknown backend: {self.backend}")
         self.output_parser = PydanticOutputParser(pydantic_object=FinalReview)
         self.workflow = self._build_graph()
+
+    def call_llm_with_timing(self, *args, **kwargs):
+        import time
+        start = time.time()
+        result = self.llm(*args, **kwargs)
+        end = time.time()
+        self._log_timing("HuggingFace LLM call", start, end)
+        return result
 
     def _build_graph(self) -> StateGraph:
         workflow = StateGraph(GraphState)

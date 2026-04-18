@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 // https://vitejs.dev/config/
 export default defineConfig({
-    base: '', // Ensure relative paths for assets to work in HF Spaces environment
+    base: './', // Use relative paths for static asset delivery in HF Spaces
     plugins: [react()],
     resolve: {
         alias: {

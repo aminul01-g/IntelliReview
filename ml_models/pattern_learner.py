@@ -57,7 +57,7 @@ class PatternLearner:
             "accepted": accepted,
             "context_hash": hash(code_context) % 10000
         })
-        # a
+        
         # Limit examples to last 100
         if len(self.patterns[issue_type]["examples"]) > 100:
             self.patterns[issue_type]["examples"] = \

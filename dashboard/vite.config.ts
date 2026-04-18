@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 // https://vitejs.dev/config/
 export default defineConfig({
-    base: './', // Use relative paths for static asset delivery in HF Spaces
+    base: '/', // Use absolute paths so SPA routes like /login still resolve assets correctly
     plugins: [react()],
     resolve: {
         alias: {

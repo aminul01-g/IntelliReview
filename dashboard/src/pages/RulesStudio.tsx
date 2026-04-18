@@ -6,67 +6,53 @@ import { useMutation } from '@tanstack/react-query'
 
 const { Play } = Lucide as any
 
-const DEFAULT_RULE = `id: custom-sql-injection
-message: "Direct SQL execution"
-severity: ERROR
-language: python
-pattern: |
-  $DB.execute($QUERY)
+const DEFAULT_RULE = `rules:
+  - id: custom-sql-injection
+    message: "Direct SQL execution"
+    severity: ERROR
+    language: python
+    pattern: |
+      $DB.execute($QUERY)
 `
 
 export function RulesStudio() {
   const [ruleCode, setRuleCode] = useState(DEFAULT_RULE)
   const [testCode, setTestCode] = useState('db.execute("SELECT * FROM users")')
 
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      try {
+        // Use the correct backend endpoint for custom rule evaluation
+        const { data } = await api.post('/analysis/custom-rules', {
+          code: testCode,
+          language: 'python',
+          filename: 'test.py',
+          rules_yaml: ruleCode  // Send the YAML directly
+        });
 
-    const [asyncTaskId, setAsyncTaskId] = useState<string | null>(null);
-    const [asyncResult, setAsyncResult] = useState<any>(null);
-    const [isPolling, setIsPolling] = useState(false);
-    const [pollError, setPollError] = useState<string | null>(null);
+        // Backend returns synchronous result with issues
+        return data;
+      } catch (error: any) {
+        console.error('Custom rule evaluation error:', error);
+        throw error;
+      }
+    },
+    onError: (error: any) => {
+      console.error('Mutation error:', error);
+    }
+  });
 
-    const testMutation = useMutation({
-         mutationFn: async () => {
-             // Use the correct backend endpoint for custom rule evaluation
-             const { data } = await api.post('/analysis/custom-rules', {
-                  code: testCode,
-                  language: 'python',
-                  rules_yaml: ruleCode
-             });
-             // If backend returns a task_id, poll for result
-             if (data.task_id) {
-                setAsyncTaskId(data.task_id);
-                setIsPolling(true);
-                setAsyncResult(null);
-                setPollError(null);
-                // Poll every 2s until result is ready
-                const poll = async () => {
-                   try {
-                      const statusRes = await api.get(`/analysis/custom-rules/status/${data.task_id}`);
-                      if (statusRes.data.status === 'SUCCESS' || statusRes.data.status === 'completed') {
-                         setAsyncResult(statusRes.data.result);
-                         setIsPolling(false);
-                      } else if (statusRes.data.status === 'FAILURE' || statusRes.data.status === 'failed') {
-                         setPollError(statusRes.data.error || 'Task failed');
-                         setIsPolling(false);
-                      } else if (isPolling) {
-                         setTimeout(poll, 2000);
-                      }
-                   } catch (err: any) {
-                      setPollError(err?.message || 'Polling error');
-                      setIsPolling(false);
-                   }
-                };
-                poll();
-                return null;
-             }
-             // Synchronous result
-             return data;
-         }
-    })
+  const handleRunTest = () => {
+    testMutation.mutate();
+  };
 
-    // Safe mock for demo purposes if backend isn't up
-    const isPending = testMutation.isPending || isPolling;
-    const matchResult = asyncResult || testMutation.data || (testMutation.isSuccess ? { matches: [{ start: 0, end: 32, matched_text: testCode }] } : null);
+  // Determine what to show
+  const isPending = testMutation.isPending;
+  const hasError = testMutation.isError;
+  const errorMessage = testMutation.error instanceof Error ? testMutation.error.message : 'Unknown error';
+
+  // Get results from mutation data
+  const matchResult = testMutation.data;
 
   return (
     <div className="space-y-6 flex flex-col h-[calc(100vh-8rem)]">
@@ -76,13 +62,22 @@ export function RulesStudio() {
             <p className="text-muted-foreground">Define and test custom IntelliReview rules via Monaco structural matching endpoints.</p>
          </div>
          <button 
-            onClick={() => testMutation.mutate()}
+            onClick={handleRunTest}
             disabled={isPending}
             className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 rounded-md font-medium text-sm flex items-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
          >
             <Play className="h-4 w-4 fill-current" /> Run Rule Evaluation
          </button>
       </div>
+
+      {hasError && (
+        <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4 flex items-start gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-destructive">Error running rule evaluation:</p>
+            <p className="text-sm text-destructive/80 mt-1">{errorMessage}</p>
+          </div>
+        </div>
+      )}
       
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
          <div className="flex flex-col border border-border rounded-lg overflow-hidden bg-card min-h-0 shadow-sm">
@@ -137,7 +132,7 @@ export function RulesStudio() {
                 ) : matchResult ? (
                    <div className="space-y-4">
                      <div className="text-sm font-medium flex items-center gap-2">
-                       Matches Found: <span className="font-bold text-destructive bg-destructive/10 px-2 py-0.5 rounded-full">{matchResult.matches?.length || 0}</span>
+                       Issues Found: <span className="font-bold text-destructive bg-destructive/10 px-2 py-0.5 rounded-full">{matchResult.issues_found || matchResult.issues?.length || 0}</span>
                      </div>
                      <pre className="text-xs bg-muted/40 border border-border rounded-md p-3 text-muted-foreground font-mono whitespace-pre-wrap">
                         {JSON.stringify(matchResult, null, 2)}

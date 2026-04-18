@@ -5,13 +5,13 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { useScanHistory, useScanReport, ScanMetadata } from '@/hooks/useScanHistory'
+import { useScanHistory, useScanReport, TransformedScanData } from '@/hooks/useScanHistory'
 import * as Dialog from '@radix-ui/react-dialog'
 import { X, FileCode } from 'lucide-react'
 
 // --- DIALOG COMPONENT FOR MONGODB REPORTS ---
 function ReportDialog({ scanId, onClose }: { scanId: string | null, onClose: () => void }) {
-  const { data, isLoading } = useScanReport(scanId);
+  const { data, isLoading, isError, error } = useScanReport(scanId);
 
   return (
     <Dialog.Root open={!!scanId} onOpenChange={(open: boolean) => !open && onClose()}>
@@ -20,10 +20,10 @@ function ReportDialog({ scanId, onClose }: { scanId: string | null, onClose: () 
         <Dialog.Content className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-4xl translate-x-[-50%] translate-y-[-50%] gap-4 border border-border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-lg md:w-full max-h-[85vh] flex flex-col">
           <div className="flex flex-col space-y-1.5">
             <Dialog.Title className="text-lg font-semibold leading-none tracking-tight">
-               Historical Scan Report Details
+               Scan Report Details
             </Dialog.Title>
             <Dialog.Description className="text-sm text-muted-foreground">
-               Pulling dense JSON diff analysis from MongoDB Archive for Scan ID: {scanId}
+               Analysis Report for Scan ID: {scanId}
             </Dialog.Description>
           </div>
           
@@ -31,15 +31,42 @@ function ReportDialog({ scanId, onClose }: { scanId: string | null, onClose: () 
              {isLoading ? (
                <div className="absolute inset-0 flex items-center justify-center flex-col gap-3 text-muted-foreground animate-pulse">
                   <FileCode className="h-8 w-8 opacity-40" />
-                  <p className="text-sm">Retrieving payload from MongoDB...</p>
+                  <p className="text-sm">Loading scan report...</p>
+               </div>
+             ) : isError ? (
+               <div className="absolute inset-0 flex items-center justify-center">
+                  <p className="text-sm text-destructive">Failed to load report: {error instanceof Error ? error.message : 'Unknown error'}</p>
                </div>
              ) : data ? (
-               <pre className="text-xs font-mono whitespace-pre-wrap text-muted-foreground">
-                  {JSON.stringify(data, null, 2)}
-               </pre>
+               <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="bg-card p-3 rounded-lg border border-border">
+                        <p className="text-xs text-muted-foreground mb-1">Project</p>
+                        <p className="text-sm font-medium text-foreground">{data.project_name}</p>
+                     </div>
+                     <div className="bg-card p-3 rounded-lg border border-border">
+                        <p className="text-xs text-muted-foreground mb-1">Scan Date</p>
+                        <p className="text-sm font-medium text-foreground">{data.date}</p>
+                     </div>
+                     <div className="bg-card p-3 rounded-lg border border-border">
+                        <p className="text-xs text-muted-foreground mb-1">Health Score</p>
+                        <p className="text-sm font-medium text-foreground">{data.health_score}/100</p>
+                     </div>
+                     <div className="bg-card p-3 rounded-lg border border-border">
+                        <p className="text-xs text-muted-foreground mb-1">Language</p>
+                        <p className="text-sm font-medium text-foreground">{data.details?.language || 'Unknown'}</p>
+                     </div>
+                  </div>
+                  <div>
+                     <p className="text-xs text-muted-foreground mb-2 font-medium">Full Report JSON</p>
+                     <pre className="text-xs font-mono whitespace-pre-wrap text-muted-foreground bg-background p-3 rounded border border-border overflow-auto max-h-[300px]">
+                        {JSON.stringify(data, null, 2)}
+                     </pre>
+                  </div>
+               </div>
              ) : (
                <div className="absolute inset-0 flex items-center justify-center">
-                  <p className="text-sm text-muted-foreground">No historical report found or failed to load.</p>
+                  <p className="text-sm text-muted-foreground">No report data available.</p>
                </div>
              )}
           </div>
@@ -57,13 +84,13 @@ function ReportDialog({ scanId, onClose }: { scanId: string | null, onClose: () 
 }
 
 // --- TABLE CONFIGURATION ---
-const columnHelper = createColumnHelper<ScanMetadata>()
+const columnHelper = createColumnHelper<TransformedScanData>()
 
 export function ScanHistory() {
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(0);
   const [selectedScanId, setSelectedScanId] = useState<string | null>(null);
   
-  const { data, isLoading } = useScanHistory(page, 10);
+  const { data, isLoading, isError, error } = useScanHistory(page, 10);
 
   const columns = [
     columnHelper.accessor('project_name', {
@@ -153,14 +180,20 @@ export function ScanHistory() {
             <tbody className="divide-y divide-border/60">
               {isLoading && !data ? (
                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground animate-pulse">Loading relational metadata via Axios/React Query...</td>
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground animate-pulse">Loading scan history...</td>
+                 </tr>
+              ) : isError ? (
+                 <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-destructive">
+                       Error loading history: {error instanceof Error ? error.message : 'Unknown error'}
+                    </td>
                  </tr>
               ) : safeData.length === 0 ? (
                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No scan history found.</td>
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No scan history found. Upload a project to start analyzing.</td>
                  </tr>
               ) : table.getRowModel().rows.map((row: any) => (
-                <tr key={row.id} className="hover:bg-muted/30 transition-colors">
+                <tr key={row.id || row.original?.id} className="hover:bg-muted/30 transition-colors">
                   {row.getVisibleCells().map((cell: any) => (
                     <td key={cell.id} className="px-4 py-3">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -172,16 +205,17 @@ export function ScanHistory() {
           </table>
         </div>
         <div className="p-4 border-t border-border flex items-center justify-between text-sm bg-muted/10">
-           <span className="text-muted-foreground font-medium">Showing page {page}</span>
+           <span className="text-muted-foreground font-medium">Showing page {page + 1}</span>
            <div className="flex gap-2">
               <button 
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={page === 0}
                 className="px-3 py-1.5 border border-border rounded-md disabled:opacity-50 hover:bg-muted/50 transition-colors font-medium bg-background"
               >Previous</button>
               <button 
                 onClick={() => setPage(p => p + 1)}
-                className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors font-medium"
+                disabled={safeData.length < 10}
+                className="px-3 py-1.5 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 disabled:opacity-50 transition-colors font-medium"
               >Next</button>
            </div>
         </div>

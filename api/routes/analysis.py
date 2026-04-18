@@ -300,9 +300,8 @@ async def get_analysis_history(
 ):
     """Get user's analysis history.
     
-    By default, returns only 'loose file' analyses (standalone snippets
-    that were NOT uploaded as part of a project folder).
-    Pass project_id to get analyses for a specific project instead.
+    Returns analyses. If project_id is specified, returns analyses for that project.
+    Otherwise, returns all user's analyses (both loose files and project files).
     """
     query = db.query(Analysis).filter(
         Analysis.user_id == current_user.id
@@ -311,9 +310,8 @@ async def get_analysis_history(
     if project_id is not None:
         # Return analyses belonging to a specific project
         query = query.filter(Analysis.project_id == project_id)
-    else:
-        # Default: return only loose files (no project association)
-        query = query.filter(Analysis.project_id.is_(None))
+    # Note: removed the default filter for project_id.is_(None)
+    # so now we return ALL analyses, including those from projects
     
     analyses = query.order_by(Analysis.created_at.desc()).limit(limit).all()
     
@@ -408,6 +406,17 @@ import asyncio
 # In-memory dictionary to hold statuses for tasks executing locally via fallback
 local_task_states = {}
 
+# Cleanup old task states (older than 1 hour)
+def cleanup_old_task_states():
+    import time
+    current_time = time.time()
+    to_remove = []
+    for task_id, state in local_task_states.items():
+        if "timestamp" in state and current_time - state["timestamp"] > 3600:  # 1 hour
+            to_remove.append(task_id)
+    for task_id in to_remove:
+        del local_task_states[task_id]
+
 @router.post("/upload")
 async def analyze_uploaded_files(
     request: Request,
@@ -445,7 +454,7 @@ async def analyze_uploaded_files(
         logger.warning(f"Celery enqueue failed, falling back to local BackgroundTasks: {e}")
         
     # Step 2: Fallback to local background task execution
-    local_task_states[task_id] = {"status": "PENDING", "info": "Queued for local processing..."}
+    local_task_states[task_id] = {"status": "PENDING", "info": "Queued for local processing...", "timestamp": time.time()}
     
     async def fallback_worker(tid: str, uid: int):
         class DummyTask:
@@ -458,10 +467,12 @@ async def analyze_uploaded_files(
             res = await _process_upload_async(DummyTask(), tid, uid)
             local_task_states[tid]["status"] = "SUCCESS"
             local_task_states[tid]["result"] = res
+            local_task_states[tid]["timestamp"] = time.time()
         except Exception as exc:
             logger.exception("Local fallback task failed")
             local_task_states[tid]["status"] = "FAILURE"
             local_task_states[tid]["error"] = str(exc)
+            local_task_states[tid]["timestamp"] = time.time()
             
     # Execute immediately in background, returning task_id to frontend
     background_tasks.add_task(fallback_worker, task_id, current_user.id)
@@ -471,6 +482,8 @@ async def analyze_uploaded_files(
 @router.get("/upload/status/{task_id}")
 async def get_upload_status(task_id: str):
     """Poll Celery task status, or check local fallback states."""
+    cleanup_old_task_states()
+    
     # First check fallback dictionary
     if task_id in local_task_states:
         state = local_task_states[task_id]
@@ -560,7 +573,7 @@ async def review_diff(
     Falls back to normal asyncio BackgroundTasks if Celery/Redis are unreachable.
     """
     import uuid
-    from api.tasks.analysis_tasks import analyze_tech_debt_task, _analyze_tech_debt_async
+    from api.tasks.analysis_tasks import analyze_tech_debt_task, _analyze_tech_debt_async_no_self
     
     # We heuristically guess the main language from the diff
     import re
@@ -579,23 +592,19 @@ async def review_diff(
         logger.warning(f"Celery enqueue for diff-review failed, falling back locally: {e}")
         
     # Local Fallback Execution
-    local_task_states[task_id] = {"status": "PENDING", "info": "Queued locally for Diff Review..."}
+    local_task_states[task_id] = {"status": "PENDING", "info": "Queued locally for Diff Review...", "timestamp": time.time()}
 
     async def fallback_diff_worker(tid: str):
-        class DummyTask:
-            def update_state(self, state, meta=None):
-                local_task_states[tid]["status"] = state
-                if meta and 'status' in meta:
-                    local_task_states[tid]["info"] = meta['status']
-                    
         try:
-            res = await _analyze_tech_debt_async(DummyTask(), request.diff, language)
+            res = await _analyze_tech_debt_async_no_self(request.diff, language)
             local_task_states[tid]["status"] = "SUCCESS"
             local_task_states[tid]["result"] = res
+            local_task_states[tid]["timestamp"] = time.time()
         except Exception as exc:
-            logger.exception("Local fallback diff task failed")
+            logger.exception("Local diff-review fallback task failed")
             local_task_states[tid]["status"] = "FAILURE"
             local_task_states[tid]["error"] = str(exc)
+            local_task_states[tid]["timestamp"] = time.time()
             
     background_tasks.add_task(fallback_diff_worker, task_id)
     return {"task_id": task_id, "status": "processing", "fallback": True}

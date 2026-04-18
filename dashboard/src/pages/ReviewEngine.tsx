@@ -15,10 +15,10 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any; taskId?: stri
   const handleAction = (action: 'accept' | 'reject') => {
     telemetry.mutate(
       {
-        rule_id: suggestion.rule_id || 'UNKNOWN_RULE',
+        rule_id: suggestion.rule_id || suggestion.id || suggestion.concept || 'UNKNOWN_RULE',
         action,
         task_id: taskId,
-        line_number: suggestion.line
+        line_number: suggestion.line || 0
       },
       {
         onSuccess: () => setResolved(true)
@@ -30,7 +30,7 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any; taskId?: stri
     setFeedbackMsg(null)
     try {
       await requestBetterFix.mutateAsync({
-        finding_id: suggestion.rule_id || suggestion.id || 'UNKNOWN',
+        finding_id: suggestion.rule_id || suggestion.id || suggestion.concept || 'UNKNOWN',
         action: 'request_better_fix',
         comment: '',
         repository: 'unknown',
@@ -46,7 +46,7 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any; taskId?: stri
     setFeedbackMsg(null)
     try {
       await ignorePattern.mutateAsync({
-        finding_id: suggestion.rule_id || suggestion.id || 'UNKNOWN',
+        finding_id: suggestion.rule_id || suggestion.id || suggestion.concept || 'UNKNOWN',
         action: 'ignore_pattern',
         comment: '',
         repository: 'unknown',
@@ -74,8 +74,8 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any; taskId?: stri
           <FileCode className="h-5 w-5" />
         </div>
         <div className="flex-1">
-          <h3 className="text-sm font-semibold text-foreground">{suggestion.title || 'Security finding'}</h3>
-          <p className="text-xs text-muted-foreground mt-1">Rule: {suggestion.rule_id || suggestion.id || 'N/A'}</p>
+          <h3 className="text-sm font-semibold text-foreground">{suggestion.title || suggestion.concept || 'Technical Debt Finding'}</h3>
+          <p className="text-xs text-muted-foreground mt-1">Severity: {suggestion.severity || suggestion.rule_id || suggestion.id || 'N/A'}</p>
         </div>
       </div>
       <div className="space-y-3 text-sm text-muted-foreground">
@@ -172,7 +172,9 @@ const ReviewEngine = () => {
   const isAnalyzing = Boolean((isPolling && activeTaskId) || taskData?.status === 'processing' || taskData?.status === 'PENDING')
   const isCompleted = taskData?.status === 'SUCCESS' || taskData?.status === 'completed'
   const isFailed = taskData?.status === 'FAILURE' || taskData?.status === 'failed'
-  const issues = taskData?.result?.issues || []
+  const issues = taskData?.result?.findings || taskData?.result?.issues || []
+  const verdict = taskData?.result?.verdict
+  const totalDebtHours = taskData?.result?.total_debt_hours
 
   return (
     <div className="space-y-6 flex flex-col h-[calc(100vh-8rem)]">
@@ -273,9 +275,22 @@ const ReviewEngine = () => {
                   <p className="opacity-90 mt-0.5 text-xs">Awaiting your feedback on these suggestions to refine our False Positive Rates.</p>
                 </div>
               </div>
+              {verdict && (
+                <div className="bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded-md p-3 text-sm flex items-start gap-2 shrink-0">
+                  <div className="flex-1">
+                    <p className="font-semibold">Analysis Summary</p>
+                    <p className="opacity-90 mt-0.5">{verdict}</p>
+                    {totalDebtHours !== undefined && (
+                      <p className="opacity-80 mt-1 text-xs">Estimated technical debt: {totalDebtHours} hours</p>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="flex-1 overflow-auto space-y-4 pr-1 custom-scrollbar">
                 {issues.length === 0 ? (
-                  <div className="text-muted-foreground text-sm text-center py-8">No issues found in this analysis.</div>
+                  <div className="text-muted-foreground text-sm text-center py-8">
+                    {verdict ? "Analysis completed successfully. No technical debt issues detected." : "No issues found in this analysis."}
+                  </div>
                 ) : (
                   issues.map((issue: any, index: number) => (
                     <SuggestionCard key={index} suggestion={issue} taskId={activeTaskId} />

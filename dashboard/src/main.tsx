@@ -135,9 +135,9 @@ const router = createBrowserRouter([
           },
         ]
       },
-      // Protected Route for Custom Rules Studio (Admin or Reviewer only)
+      // Rules Studio is accessible to all authenticated users
       {
-        element: <ProtectedRoute allowedRoles={['Admin', 'Reviewer']} />,
+        element: <ProtectedRoute />,
         children: [
           {
             path: "rules",
@@ -147,6 +147,12 @@ const router = createBrowserRouter([
               </ErrorBoundary>
             ),
           },
+        ]
+      },
+      // Protected Routes for Admin only (Admin or Reviewer)
+      {
+        element: <ProtectedRoute allowedRoles={['Admin', 'Reviewer']} />,
+        children: [
            {
              path: "admin/policies",
              element: (

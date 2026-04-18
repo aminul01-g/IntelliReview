@@ -1,14 +1,26 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Upload, FileText, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
 
 export function UploadProject() {
+  const navigate = useNavigate()
   const [isDragging, setIsDragging] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [pollMessage, setPollMessage] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Auto-redirect to history after successful upload
+  useEffect(() => {
+    if (uploadStatus === 'success') {
+      const redirectTimer = setTimeout(() => {
+        navigate('/history')
+      }, 2000)
+      return () => clearTimeout(redirectTimer)
+    }
+  }, [uploadStatus, navigate])
 
   const handleDragOver = (e: any) => {
     e.preventDefault()
@@ -43,8 +55,10 @@ export function UploadProject() {
     try {
       const formData = new FormData()
       files.forEach(file => {
-        // FastAPI reads the original relative path structure automatically if available
-        formData.append('files', file)
+        // Preserve directory structure by using relative path as filename
+        const relativePath = (file as any).webkitRelativePath || file.name
+        const fileWithPath = new File([file], relativePath, { type: file.type })
+        formData.append('files', fileWithPath)
       })
 
       const response = await api.post('/analysis/upload', formData, {
@@ -181,22 +195,29 @@ export function UploadProject() {
              >
                Clear Queue
              </button>
-             <button 
-               onClick={handleUpload}
-               disabled={isUploading || uploadStatus === 'success'}
-               className="h-10 px-6 py-2 text-sm font-medium rounded-md text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm"
-             >
-               {isUploading ? (
-                 <>
-                   <RefreshCw className="h-4 w-4 animate-spin" />
-                   Processing...
-                 </>
-               ) : uploadStatus === 'success' ? (
-                 'Redirecting to History...'
-               ) : (
-                 'Start Deep Scan'
-               )}
-             </button>
+             {uploadStatus === 'success' ? (
+               <button 
+                 onClick={() => navigate('/history')}
+                 className="h-10 px-6 py-2 text-sm font-medium rounded-md text-primary-foreground bg-primary hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm"
+               >
+                 View Results in History
+               </button>
+             ) : (
+               <button 
+                 onClick={handleUpload}
+                 disabled={isUploading || uploadStatus === 'success'}
+                 className="h-10 px-6 py-2 text-sm font-medium rounded-md text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm"
+               >
+                 {isUploading ? (
+                   <>
+                     <RefreshCw className="h-4 w-4 animate-spin" />
+                     Processing...
+                   </>
+                 ) : (
+                   'Start Deep Scan'
+                 )}
+               </button>
+             )}
            </div>
         </div>
       )}

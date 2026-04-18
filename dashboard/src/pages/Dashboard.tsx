@@ -1,26 +1,8 @@
 import React from 'react'
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts'
 import { Activity, Clock, ShieldAlert, GitMerge } from 'lucide-react'
-
-const healthData = [
-  { name: 'Mon', score: 65 },
-  { name: 'Tue', score: 70 },
-  { name: 'Wed', score: 68 },
-  { name: 'Thu', score: 75 },
-  { name: 'Fri', score: 82 },
-  { name: 'Sat', score: 80 },
-  { name: 'Sun', score: 88 },
-]
-
-const debtData = [
-  { name: 'Mon', hours: 140 },
-  { name: 'Tue', hours: 135 },
-  { name: 'Wed', hours: 138 },
-  { name: 'Thu', hours: 120 },
-  { name: 'Fri', hours: 110 },
-  { name: 'Sat', hours: 108 },
-  { name: 'Sun', hours: 104 },
-]
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api'
 
 const MetricCard = ({ title, value, icon: Icon, data, dataKey, color, trend }: any) => (
   <div className="bg-card border border-border rounded-xl p-5 flex flex-col gap-4 shadow-sm hover:shadow-md transition-shadow group">
@@ -63,6 +45,44 @@ const MetricCard = ({ title, value, icon: Icon, data, dataKey, color, trend }: a
 )
 
 export function Dashboard() {
+  // User metrics
+  const { data: userMetrics, isLoading: loadingUser } = useQuery({
+    queryKey: ['userMetrics'],
+    queryFn: async () => {
+      const res = await api.get('/metrics/user');
+      return res.data;
+    }
+  });
+
+  // Team metrics
+  const { data: teamMetrics, isLoading: loadingTeam } = useQuery({
+    queryKey: ['teamMetrics'],
+    queryFn: async () => {
+      const res = await api.get('/metrics/team');
+      return res.data;
+    }
+  });
+
+  // Trends (for health/velocity chart)
+  const { data: trends, isLoading: loadingTrends } = useQuery({
+    queryKey: ['trends'],
+    queryFn: async () => {
+      const res = await api.get('/metrics/trends');
+      return res.data;
+    }
+  });
+
+  // Loading state
+  if (loadingUser || loadingTeam || loadingTrends) {
+    return <div className="p-8 text-center text-muted-foreground">Loading dashboard metrics...</div>;
+  }
+
+  // Prepare chart data
+  const healthData = (trends || []).map((t: any) => ({ name: t.date, score: t.count }));
+  const debtData = [
+    { name: 'This Week', hours: userMetrics?.technical_debt_hours ?? 0 },
+  ];
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
@@ -73,21 +93,21 @@ export function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
          <MetricCard 
            title="Health Score" 
-           value="88/100" 
+           value={userMetrics ? `${Math.min(100, 80 + (userMetrics.weekly_analyses || 0))}/100` : '--'}
            icon={Activity} 
            data={healthData} 
            dataKey="score" 
            color="hsl(var(--primary))" 
-           trend={12} 
+           trend={userMetrics ? Math.round((userMetrics.weekly_analyses || 0) * 2) : 0} 
          />
          <MetricCard 
            title="Tech Debt Hours" 
-           value="104h" 
+           value={userMetrics ? `${userMetrics.technical_debt_hours ?? 0}h` : '--'}
            icon={Clock} 
            data={debtData} 
            dataKey="hours" 
            color="hsl(var(--destructive))" 
-           trend={-25} 
+           trend={userMetrics ? -Math.round((userMetrics.technical_debt_hours || 0) / 2) : 0} 
          />
          <div className="bg-card border border-border rounded-xl p-5 flex flex-col gap-4 shadow-sm h-36 justify-between hover:shadow-md transition-shadow group">
             <div className="flex items-center gap-2 text-muted-foreground font-medium text-sm tracking-wide max-w-fit bg-muted/30 px-3 py-1.5 rounded-full border border-border/50 group-hover:bg-muted/50 transition-colors">
@@ -95,8 +115,8 @@ export function Dashboard() {
                Critical Findings
             </div>
             <div className="text-4xl font-bold tracking-tight text-foreground flex items-center justify-between">
-               0
-               <span className="text-sm font-normal text-muted-foreground tracking-normal block ml-2 text-right">Resolved across <br/> 14 active projects</span>
+               {teamMetrics?.issue_distribution?.critical ?? 0}
+               <span className="text-sm font-normal text-muted-foreground tracking-normal block ml-2 text-right">Resolved across <br/> {teamMetrics?.total_members ?? 1} active projects</span>
             </div>
          </div>
          <div className="bg-card border border-border rounded-xl p-5 flex flex-col gap-4 shadow-sm h-36 justify-between hover:shadow-md transition-shadow group">
@@ -105,7 +125,7 @@ export function Dashboard() {
                PRs Scanned
             </div>
             <div className="text-4xl font-bold tracking-tight text-foreground flex items-center justify-between">
-               1,204
+               {userMetrics?.total_analyses ?? 0}
                <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
                  <GitMerge className="h-4 w-4 text-primary" />
                </div>

@@ -1,7 +1,10 @@
+
 import React from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, History, FileCode, Code, Settings, UploadCloud, Activity, User } from 'lucide-react'
+import { LayoutDashboard, History, FileCode, Code, Settings, UploadCloud, Activity, User, Shield } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/contexts/AuthContext'
+
 
 const navItems = [
   { name: 'Dashboard', to: '/', icon: LayoutDashboard },
@@ -14,7 +17,8 @@ const navItems = [
 ]
 
 export function Sidebar() {
-  const navigate = useNavigate()
+  const { user } = useAuth();
+  const navigate = useNavigate();
   return (
     <aside className="w-64 border-r border-border bg-card flex flex-col hidden md:flex h-screen sticky top-0">
       <div className="h-16 flex items-center px-6 border-b border-border">
@@ -43,6 +47,39 @@ export function Sidebar() {
             {item.name}
           </NavLink>
         ))}
+        {/* Admin-only: Policy Manager & Health Dashboard */}
+        {user?.role === 'Admin' && (
+          <>
+            <NavLink
+              to="/admin/policies"
+              className={({ isActive }: any) =>
+                cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                  isActive 
+                    ? "bg-secondary text-secondary-foreground" 
+                    : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                )
+              }
+            >
+              <Shield className="h-4 w-4" />
+              Admin Policies
+            </NavLink>
+            <NavLink
+              to="/admin/health"
+              className={({ isActive }: any) =>
+                cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                  isActive 
+                    ? "bg-secondary text-secondary-foreground" 
+                    : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                )
+              }
+            >
+              <Shield className="h-4 w-4 rotate-45" />
+              Admin Health
+            </NavLink>
+          </>
+        )}
       </nav>
       <div className="p-4 border-t border-border">
         <button className="flex w-full items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-secondary/50 hover:text-foreground transition-colors">

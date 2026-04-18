@@ -1,7 +1,12 @@
 import axios, { AxiosResponse, AxiosError } from 'axios'
 
+// VITE_API_BASE_URL is already the full base, e.g. http://localhost:7860/api/v1
+// In production (when the SPA is served by FastAPI), we fall back to /api/v1
+const baseURL =
+  (import.meta as any).env.VITE_API_BASE_URL ?? '/api/v1'
+
 export const api = axios.create({
-  baseURL: (import.meta as any).env.VITE_API_BASE_URL || '/api',
+  baseURL,
   withCredentials: true, // Required for HttpOnly cookies
 })
 
@@ -13,18 +18,16 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest: any = error.config
     const status: number | undefined = error.response?.status
-    const data = error.response?.data ?? {}
+    const data: any = error.response?.data ?? {}
 
-    // ── 1. 401 — token refresh flow ──────────────────────────────────────────
+    // ── 1. 401 — session expired / not authenticated ─────────────────────────
+    // There is no /auth/refresh endpoint. On 401 we simply broadcast the
+    // unauthorized event so AuthContext can clear the user state and the
+    // ProtectedRoute can redirect to /login. We only do this once per request.
     if (status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
-      try {
-        await axios.post('/api/auth/refresh', {}, { withCredentials: true })
-        return api(originalRequest)
-      } catch (refreshError) {
-        window.dispatchEvent(new Event('auth:unauthorized'))
-        return Promise.reject(refreshError)
-      }
+      window.dispatchEvent(new Event('auth:unauthorized'))
+      return Promise.reject(error)
     }
 
     // ── 2. LLM / Analysis Engine errors ─────────────────────────────────────
@@ -52,7 +55,8 @@ api.interceptors.response.use(
     }
 
     // ── 3. Generic network / 5xx passthrough ────────────────────────────────
-    if (!status || status >= 500) {
+    // Exclude 401 to avoid spurious "engine unavailable" toasts during auth checks.
+    if (status && status >= 500) {
       window.dispatchEvent(
         new CustomEvent('intellireview:engine-error', {
           detail: {

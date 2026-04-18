@@ -1,0 +1,9 @@
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+
+export function useFeedbackHistory(limit = 20) {
+  return useQuery(['feedbackHistory', limit], async () => {
+    const { data } = await api.get(`/review_feedback/feedback-history?limit=${limit}`);
+    return data;
+  });
+}

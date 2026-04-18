@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     ALLOWED_ORIGINS: str = Field(
-        "http://localhost:3000,http://localhost:8000",
+        "http://localhost:3000,http://localhost:5173,http://localhost:8000,http://localhost:7860",
         env="ALLOWED_ORIGINS",
         description="Comma-separated list of allowed origins"
     )

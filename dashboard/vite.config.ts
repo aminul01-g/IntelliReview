@@ -17,6 +17,15 @@ export default defineConfig({
     server: {
         host: '0.0.0.0',
         port: 3000,
+        proxy: {
+            // Forward all /api/* calls to the FastAPI backend during development.
+            // This eliminates cross-origin cookie issues entirely.
+            '/api': {
+                target: 'http://localhost:7860',
+                changeOrigin: true,
+                secure: false,
+            },
+        },
     },
     build: {
         chunkSizeWarningLimit: 1000,

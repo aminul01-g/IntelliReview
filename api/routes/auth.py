@@ -88,17 +88,22 @@ async def login(
         expires_delta=access_token_expires
     )
     
-    # Set secure HttpOnly cookie with SameSite=None for Hugging Face iframe embedding
-    response.set_cookie(
-        key="auth_token",
-        value=access_token,
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        httponly=True,
-        secure=True,  # Must be true when SameSite=None
-        samesite="none",
-        domain=settings.COOKIE_DOMAIN
-    )
-    
+    # Set cookie for local dev (secure=False, samesite='lax') or prod (secure=True, samesite='none')
+    cookie_kwargs = {
+        "key": "auth_token",
+        "value": access_token,
+        "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "httponly": True,
+    }
+    if settings.DEBUG or not settings.COOKIE_DOMAIN:
+        cookie_kwargs["secure"] = False
+        cookie_kwargs["samesite"] = "lax"
+        # Don't set domain for localhost
+    else:
+        cookie_kwargs["secure"] = True
+        cookie_kwargs["samesite"] = "none"
+        cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
+    response.set_cookie(**cookie_kwargs)
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=UserResponse)
@@ -109,13 +114,18 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 @router.post("/logout")
 async def logout(response: Response):
     """Clear the auth cookie to end the session."""
-    response.delete_cookie(
-        key="auth_token",
-        httponly=True,
-        secure=True,
-        samesite="none",
-        domain=settings.COOKIE_DOMAIN
-    )
+    cookie_kwargs = {
+        "key": "auth_token",
+        "httponly": True,
+    }
+    if settings.DEBUG or not settings.COOKIE_DOMAIN:
+        cookie_kwargs["secure"] = False
+        cookie_kwargs["samesite"] = "lax"
+    else:
+        cookie_kwargs["secure"] = True
+        cookie_kwargs["samesite"] = "none"
+        cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
+    response.delete_cookie(**cookie_kwargs)
     return {"message": "Logged out successfully"}
 
 # ==========================================

@@ -116,11 +116,7 @@ export function ScanHistory() {
     })
   ]
 
-  // Fallback mock data if backend isn't returning yet
-  const safeData = data?.data || [
-    { id: 'scan-x901', project_name: 'intellireview-core', date: '2026-04-17T10:00:00Z', health_score: 85, technical_debt_hours: 12, critical_vulnerabilities: 0 },
-    { id: 'scan-b442', project_name: 'api-gateway', date: '2026-04-16T14:30:00Z', health_score: 45, technical_debt_hours: 104, critical_vulnerabilities: 3 },
-  ];
+  const safeData = data?.data || [];
 
   const table = useReactTable({
     data: safeData,
@@ -158,6 +154,10 @@ export function ScanHistory() {
               {isLoading && !data ? (
                  <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground animate-pulse">Loading relational metadata via Axios/React Query...</td>
+                 </tr>
+              ) : safeData.length === 0 ? (
+                 <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No scan history found.</td>
                  </tr>
               ) : table.getRowModel().rows.map((row: any) => (
                 <tr key={row.id} className="hover:bg-muted/30 transition-colors">

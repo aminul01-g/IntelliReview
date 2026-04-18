@@ -17,16 +17,12 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
     );
   }
 
+  // Always require authentication. Unauthenticated users must log in first.
   if (!isAuthenticated || !user) {
-    // To allow unauthenticated users to use mock login, we just render if they are on dashboard
-    // But in a real scenario we'd navigate to a /login route.
-    // For now we will allow rendering if no user, but strictly enforce if allowedRoles is provided!
-    if (allowedRoles && allowedRoles.length > 0) {
-      return <Navigate to="/" replace />;
-    }
-    return <Outlet />;
+    return <Navigate to="/login" replace />;
   }
 
+  // Role-based access control: redirect non-privileged users to the home page.
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return <Navigate to="/" replace />;
   }

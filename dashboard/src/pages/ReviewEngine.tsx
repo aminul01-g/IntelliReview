@@ -4,10 +4,14 @@ import * as Lucide from 'lucide-react'
 const { FileCode, Play, AlertCircle, CheckCircle, ShieldAlert, Check, X } = Lucide as any
 import { useSubmitAnalysis, useAnalysisTaskStatus } from '@/hooks/useAnalysisTask'
 import { useTelemetryFeedback } from '@/hooks/useTelemetryFeedback'
+import { useReviewFeedback } from '@/hooks/useReviewFeedback'
+
 
 const SuggestionCard = ({ suggestion, taskId }: { suggestion: any, taskId?: string }) => {
   const [resolved, setResolved] = useState<boolean>(false);
   const telemetry = useTelemetryFeedback();
+  const { requestBetterFix, ignorePattern } = useReviewFeedback();
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
   const handleAction = (action: 'accept' | 'reject') => {
     telemetry.mutate({
@@ -18,7 +22,39 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any, taskId?: stri
     }, {
       onSuccess: () => setResolved(true)
     });
-  }
+  };
+
+  const handleRequestBetterFix = async () => {
+    setFeedbackMsg(null);
+    try {
+      await requestBetterFix.mutateAsync({
+        finding_id: suggestion.rule_id || suggestion.id || 'UNKNOWN',
+        action: 'request_better_fix',
+        comment: '',
+        repository: 'unknown',
+        pr_number: 0
+      });
+      setFeedbackMsg('Requested a better fix. Thank you!');
+    } catch (e) {
+      setFeedbackMsg('Failed to request better fix.');
+    }
+  };
+
+  const handleIgnorePattern = async () => {
+    setFeedbackMsg(null);
+    try {
+      await ignorePattern.mutateAsync({
+        finding_id: suggestion.rule_id || suggestion.id || 'UNKNOWN',
+        action: 'ignore_pattern',
+        comment: '',
+        repository: 'unknown',
+        pr_number: 0
+      });
+      setFeedbackMsg('Pattern will be ignored in future reviews.');
+    } catch (e) {
+      setFeedbackMsg('Failed to ignore pattern.');
+    }
+  };
 
   if (resolved) {
     return (
@@ -26,7 +62,7 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any, taskId?: stri
         <span className="line-through text-muted-foreground">{suggestion.title || 'Security Issue Resolved'}</span>
         <span className="text-xs text-muted-foreground max-w-[150px] truncate">Telemetry Feedback Sent</span>
       </div>
-    )
+    );
   }
 
   return (
@@ -50,21 +86,36 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any, taskId?: stri
         </div>
       )}
 
-      <div className="flex items-center gap-2 mt-1 border-t border-destructive/10 pt-3">
-         <button 
-           onClick={() => handleAction('accept')}
-           disabled={telemetry.isPending}
-           className="bg-green-500/10 hover:bg-green-500/20 text-green-500 border border-green-500/20 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
-         >
-           <Check className="h-3.5 w-3.5" /> Accept Fix
-         </button>
-         <button 
-           onClick={() => handleAction('reject')}
-           disabled={telemetry.isPending}
-           className="bg-transparent hover:bg-muted/50 text-muted-foreground border border-border px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
-         >
-           <X className="h-3.5 w-3.5" /> Reject (False Positive)
-         </button>
+      <div className="flex flex-wrap items-center gap-2 mt-1 border-t border-destructive/10 pt-3">
+        <button
+          onClick={() => handleAction('accept')}
+          disabled={telemetry.isPending}
+          className="bg-green-500/10 hover:bg-green-500/20 text-green-500 border border-green-500/20 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
+        >
+          <Check className="h-3.5 w-3.5" /> Accept Fix
+        </button>
+        <button
+          onClick={() => handleAction('reject')}
+          disabled={telemetry.isPending}
+          className="bg-transparent hover:bg-muted/50 text-muted-foreground border border-border px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
+        >
+          <X className="h-3.5 w-3.5" /> Reject (False Positive)
+        </button>
+        <button
+          onClick={handleRequestBetterFix}
+          disabled={requestBetterFix.isPending}
+          className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 border border-blue-500/20 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
+        >
+          <Lucide.Wand2 className="h-3.5 w-3.5" /> Request Better Fix
+        </button>
+        <button
+          onClick={handleIgnorePattern}
+          disabled={ignorePattern.isPending}
+          className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/20 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
+        >
+          <Lucide.EyeOff className="h-3.5 w-3.5" /> Ignore Pattern
+        </button>
+        {feedbackMsg && <span className="text-xs text-muted-foreground ml-2">{feedbackMsg}</span>}
       </div>
     </div>
   )
@@ -80,7 +131,8 @@ export function ReviewEngine() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!diffInput.trim()) return;
-    submitMutation.mutate({ diff: diffInput, project: 'default-project' }, {
+    // Only send the diff, as expected by backend
+    submitMutation.mutate({ diff: diffInput }, {
       onSuccess: (data: any) => {
         setActiveTaskId(data.task_id);
       }
@@ -91,11 +143,8 @@ export function ReviewEngine() {
   const isCompleted = taskData?.status === 'completed';
   const isFailed = taskData?.status === 'failed';
 
-  // Mocked for visual demonstration if backend returns generic results without `issues` array
-  const mockedIssues = taskData?.result?.issues || [
-    { title: 'SQL Injection Vulnerability', rule_id: 'OWASP-A03:2021', description: 'String interpolation directly executed as SQL command without parameterization.', fix: 'db.execute(text("SELECT * FROM users WHERE id = :id"), {"id": user_id})' },
-    { title: 'Hardcoded Secret', rule_id: 'CWE-798', description: 'API Key located in plaintext within the environment instantiation.', fix: 'api_key = os.getenv("API_KEY")' }
-  ];
+  // Only use real issues from backend
+  const issues = taskData?.result?.issues || [];
 
   return (
     <div className="space-y-6 flex flex-col h-[calc(100vh-8rem)]">
@@ -181,9 +230,13 @@ export function ReviewEngine() {
                </div>
                
                <div className="flex-1 overflow-auto space-y-4 pr-1 custom-scrollbar">
-                 {(taskData?.result?.issues || mockedIssues).map((issue: any, index: number) => (
-                    <SuggestionCard key={index} suggestion={issue} taskId={activeTaskId} />
-                 ))}
+                 {issues.length === 0 ? (
+                   <div className="text-muted-foreground text-sm text-center py-8">No issues found in this analysis.</div>
+                 ) : (
+                   issues.map((issue: any, index: number) => (
+                     <SuggestionCard key={index} suggestion={issue} taskId={activeTaskId} />
+                   ))
+                 )}
                </div>
              </div>
            ) : null}

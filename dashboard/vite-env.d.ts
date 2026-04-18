@@ -77,6 +77,13 @@ declare module 'axios' {
             request: { use(onFulfilled: any, onRejected?: any): number; eject(id: number): void };
             response: { use(onFulfilled: any, onRejected?: any): number; eject(id: number): void };
         };
+        defaults: {
+            headers: {
+                common: Record<string, string | undefined>;
+                [method: string]: Record<string, string | undefined>;
+            };
+            [key: string]: any;
+        };
     }
     const axios: AxiosInstance;
     export default axios;

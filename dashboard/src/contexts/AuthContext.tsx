@@ -9,9 +9,10 @@ export interface User {
   email: string;
   role: UserRole;
   name: string;
+  username: string;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -28,9 +29,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchUser = async () => {
     try {
-      const { data } = await (api as any).get('/auth/me');
+      const { data } = await api.get('/auth/me');
       setUser(data);
     } catch (error) {
+      // Not authenticated — clear user state silently
       setUser(null);
     } finally {
       setIsLoading(false);
@@ -40,8 +42,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     fetchUser();
 
+    // When api.ts broadcasts an unauthorized event (e.g. cookie expired),
+    // clear out the local user state. ProtectedRoute will then redirect to /login.
     const handleUnauthorized = () => {
       setUser(null);
+      setIsLoading(false);
     };
 
     window.addEventListener('auth:unauthorized', handleUnauthorized);
@@ -49,15 +54,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const login = async (username: string, password: string) => {
+    // The backend expects application/x-www-form-urlencoded for OAuth2PasswordRequestForm
     const params = new URLSearchParams();
     params.append('username', username);
     params.append('password', password);
-    
-    await api.post('/auth/login', params, {
+
+    const { data } = await api.post('/auth/login', params, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
-    
-    // Cookie is now set, fetch user to populate Context
+
+    // The backend sets an HttpOnly cookie AND returns the token in the body.
+    // Store the token in localStorage as a fallback Authorization header source
+    // for environments where cross-origin cookies may be blocked (dev mismatches).
+    if (data?.access_token) {
+      localStorage.setItem('auth_token', data.access_token);
+      // Attach it immediately to the axios instance default headers
+      api.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`;
+    }
+
+    // Cookie is now set (and/or token attached to headers); fetch user to populate context
     await fetchUser();
   };
 
@@ -71,9 +86,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       await api.post('/auth/logout');
     } finally {
+      // Clear the stored token and axios default header
+      localStorage.removeItem('auth_token');
+      delete api.defaults.headers.common['Authorization'];
       setUser(null);
     }
   };
+
+  // On startup, restore Authorization header from localStorage if a session token exists.
+  // This handles the case where cookies are blocked but the token was previously stored.
+  useEffect(() => {
+    const stored = localStorage.getItem('auth_token');
+    if (stored) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${stored}`;
+    }
+  }, []);
 
   return (
     <AuthContext.Provider value={{

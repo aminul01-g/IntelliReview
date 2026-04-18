@@ -18,16 +18,17 @@ export function RulesStudio() {
   const [ruleCode, setRuleCode] = useState(DEFAULT_RULE)
   const [testCode, setTestCode] = useState('db.execute("SELECT * FROM users")')
 
-  const testMutation = useMutation({
-    mutationFn: async () => {
-      // Simulate backend delay and response if api is not running
-      const { data } = await api.post('/rules/test', {
-        rule: ruleCode,
-        code: testCode
-      });
-      return data;
-    }
-  })
+   const testMutation = useMutation({
+      mutationFn: async () => {
+         // Use the correct backend endpoint for custom rule evaluation
+         const { data } = await api.post('/analysis/custom-rules', {
+            code: testCode,
+            language: 'python',
+            rules_yaml: ruleCode
+         });
+         return data;
+      }
+   })
 
   // Safe mock for demo purposes if backend isn't up
   const isPending = testMutation.isPending;

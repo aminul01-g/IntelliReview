@@ -12,10 +12,13 @@ import { UploadProject } from './pages/UploadProject'
 import { MetricsView } from './pages/MetricsView'
 import { ProfileSettings } from './components/profile/ProfileSettings'
 import { AuthProvider } from './contexts/AuthContext'
+import { FeedbackHistory } from './pages/FeedbackHistory'
 import { ToastProvider, useToast } from './contexts/ToastContext'
 import { ProtectedRoute } from './components/layout/ProtectedRoute'
 import { Toaster } from './components/ui/Toaster'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
+import { AdminPolicyManager } from './pages/AdminPolicyManager'
+import { AdminHealthDashboard } from './pages/AdminHealthDashboard'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -122,6 +125,14 @@ const router = createBrowserRouter([
               </ErrorBoundary>
             ),
           },
+          {
+            path: "feedback-history",
+            element: (
+              <ErrorBoundary label="Feedback History">
+                <FeedbackHistory />
+              </ErrorBoundary>
+            ),
+          },
         ]
       },
       // Protected Route for Custom Rules Studio (Admin or Reviewer only)
@@ -136,6 +147,22 @@ const router = createBrowserRouter([
               </ErrorBoundary>
             ),
           },
+           {
+             path: "admin/policies",
+             element: (
+               <ErrorBoundary label="Admin Policy Manager">
+                 <AdminPolicyManager />
+               </ErrorBoundary>
+             ),
+           },
+         {
+           path: "admin/health",
+           element: (
+             <ErrorBoundary label="Admin Health Dashboard">
+               <AdminHealthDashboard />
+             </ErrorBoundary>
+           ),
+         },
         ],
       },
     ],

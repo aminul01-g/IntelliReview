@@ -8,27 +8,31 @@ export interface AnalysisTaskResult {
   progress?: number; 
 }
 
+
+// Submits a diff/code snippet for analysis using the correct backend endpoint
 export function useSubmitAnalysis() {
   return useMutation({
-    mutationFn: async (payload: { diff: string, project: string }) => {
-      const response = await api.post<{ task_id: string }>('/analysis/submit', payload);
+    mutationFn: async (payload: { diff: string }) => {
+      // Backend expects { diff: string }
+      const response = await api.post<{ task_id: string }>('/analysis/diff-review', payload);
       return response.data;
     }
   })
 }
 
+// Polls the status of an analysis task using the correct backend endpoint
 export function useAnalysisTaskStatus(taskId: string | null) {
   return useQuery<AnalysisTaskResult>({
     queryKey: ['taskStatus', taskId],
     queryFn: async () => {
-      const response = await api.get<AnalysisTaskResult>(`/analysis/task/${taskId}`);
+      const response = await api.get<AnalysisTaskResult>(`/analysis/upload/status/${taskId}`);
       return response.data;
     },
     enabled: !!taskId,
     refetchInterval: (query: any) => {
       const status = query.state.data?.status;
       if (status === 'completed' || status === 'failed') return false;
-      return 2000; 
+      return 2000;
     },
   });
 }

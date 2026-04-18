@@ -91,9 +91,5 @@ class Settings(BaseSettings):
         if len(v) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters.")
         return v
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 settings = Settings()

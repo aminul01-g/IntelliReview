@@ -22,7 +22,7 @@ export default defineConfig({
             // Forward all /api/* calls to the FastAPI backend during development.
             // This eliminates cross-origin cookie issues entirely.
             '/api': {
-                target: 'http://localhost:7860',
+                target: 'http://localhost:7860/api',
                 changeOrigin: true,
                 secure: false,
             },

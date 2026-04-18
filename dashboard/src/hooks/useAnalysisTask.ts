@@ -2,10 +2,11 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 export interface AnalysisTaskResult {
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  task_id: string;
+  status: 'PENDING' | 'processing' | 'SUCCESS' | 'FAILURE' | 'completed' | 'failed';
+  task_id?: string;
   result?: any;
-  progress?: number; 
+  info?: string;
+  error?: string;
 }
 
 
@@ -33,7 +34,7 @@ export function useAnalysisTaskStatus(taskId: string | null) {
     enabled: !!taskId,
     refetchInterval: (query: any) => {
       const status = query.state.data?.status;
-      if (status === 'completed' || status === 'failed' || status === 'SUCCESS' || status === 'FAILURE') return false;
+      if (status === 'SUCCESS' || status === 'FAILURE' || status === 'completed' || status === 'failed') return false;
       return 2000;
     },
   });

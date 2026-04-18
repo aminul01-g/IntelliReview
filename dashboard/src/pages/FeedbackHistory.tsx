@@ -22,10 +22,10 @@ export function FeedbackHistory() {
               </tr>
             </thead>
             <tbody>
-              {data.results?.length === 0 && (
+              {data.feedback_history?.length === 0 && (
                 <tr><td colSpan={5} className="text-center py-4 text-muted-foreground">No feedback history found.</td></tr>
               )}
-              {data.results?.map((fb: any) => (
+              {data.feedback_history?.map((fb: any) => (
                 <tr key={fb.id} className="border-t border-border text-sm">
                   <td className="px-4 py-2">{fb.id}</td>
                   <td className="px-4 py-2">{fb.finding_id}</td>

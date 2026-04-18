@@ -169,9 +169,9 @@ const ReviewEngine = () => {
     )
   }
 
-  const isAnalyzing = Boolean((isPolling && activeTaskId) || taskData?.status === 'processing' || taskData?.status === 'pending')
-  const isCompleted = taskData?.status === 'completed'
-  const isFailed = taskData?.status === 'failed'
+  const isAnalyzing = Boolean((isPolling && activeTaskId) || taskData?.status === 'processing' || taskData?.status === 'PENDING')
+  const isCompleted = taskData?.status === 'SUCCESS' || taskData?.status === 'completed'
+  const isFailed = taskData?.status === 'FAILURE' || taskData?.status === 'failed'
   const issues = taskData?.result?.issues || []
 
   return (

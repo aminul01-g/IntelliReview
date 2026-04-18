@@ -17,7 +17,7 @@ export function AdminPolicyManager() {
   const { data, refetch, isLoading, isError } = useQuery({
     queryKey: ['globalPolicies'],
     queryFn: async () => {
-      const { data } = await api.get('/global');
+      const { data } = await api.get('/policies/global');
       return data;
     },
     enabled: !!user && user.role === 'Admin',
@@ -33,7 +33,7 @@ export function AdminPolicyManager() {
   // Update global policies
   const updateMutation = useMutation({
     mutationFn: async (rules: any) => {
-      const { data } = await api.put('/global', { rules });
+      const { data } = await api.put('/policies/global', { rules });
       return data;
     },
     onSuccess: () => {

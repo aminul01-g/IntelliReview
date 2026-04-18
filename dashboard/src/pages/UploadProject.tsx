@@ -65,7 +65,7 @@ export function UploadProject() {
             setIsUploading(false)
             setUploadStatus('success')
             setPollMessage('Scan Complete!')
-          } else if (state === 'FAILURE' || state === 'REVOKED') {
+          } else if (state === 'FAILURE') {
             window.clearInterval(pollInterval)
             setIsUploading(false)
             setUploadStatus('error')

@@ -507,6 +507,8 @@ async def get_upload_status(task_id: str):
 # Reviews only the changed lines in a unified diff, producing focused
 # analysis on what actually changed rather than the entire file.
 
+
+from fastapi import Response
 from pydantic import BaseModel
 
 class DiffReviewRequest(BaseModel):
@@ -598,6 +600,75 @@ async def review_diff(
     background_tasks.add_task(fallback_diff_worker, task_id)
     return {"task_id": task_id, "status": "processing", "fallback": True}
 
+
+# --- NEW: Status endpoint for diff-review async tasks ---
+@router.get("/diff-review/status/{task_id}")
+async def get_diff_review_status(task_id: str):
+    """Poll Celery task status, or check local fallback states for diff-review tasks."""
+    # First check fallback dictionary
+    if task_id in local_task_states:
+        state = local_task_states[task_id]
+        if state["status"] == "PENDING":
+            return {"status": state["status"], "info": state.get("info", "Queued waiting for workers...")}
+        elif state["status"] not in ["FAILURE", "SUCCESS"]:
+            return {"status": state["status"], "info": state.get("info", "Processing...")}
+        elif state["status"] == "SUCCESS":
+            return {"status": "SUCCESS", "info": state.get("info"), "result": state.get("result")}
+        else:
+            return {"status": "FAILURE", "error": state.get("error", "Unknown internal error")}
+
+    # Query celery
+    try:
+        from api.celery_app import celery_app
+        task_result = celery_app.AsyncResult(task_id)
+
+        if task_result.state == 'PENDING':
+            response = {"status": task_result.state, "info": "Queued waiting for workers..."}
+        elif task_result.state != 'FAILURE':
+            response = {"status": task_result.state, "info": task_result.info.get('status', '') if isinstance(task_result.info, dict) else str(task_result.info)}
+            if task_result.state == 'SUCCESS':
+                response["result"] = task_result.get()
+        else:
+            response = {"status": task_result.state, "error": str(task_result.info)}
+        return response
+    except Exception as e:
+        logger.warning(f"Error querying celery result store: {e}")
+        # Could be an old task that celery lost connection to
+        return {"status": "FAILURE", "error": f"Lost connection to task backend: {e}"}
+
+
+
+# --- NEW: Status endpoint for custom-rules async tasks (if needed in future) ---
+@router.get("/custom-rules/status/{task_id}")
+async def get_custom_rules_status(task_id: str):
+    """Poll Celery task status, or check local fallback states for custom-rules tasks."""
+    if task_id in local_task_states:
+        state = local_task_states[task_id]
+        if state["status"] == "PENDING":
+            return {"status": state["status"], "info": state.get("info", "Queued waiting for workers...")}
+        elif state["status"] not in ["FAILURE", "SUCCESS"]:
+            return {"status": state["status"], "info": state.get("info", "Processing...")}
+        elif state["status"] == "SUCCESS":
+            return {"status": "SUCCESS", "info": state.get("info"), "result": state.get("result")}
+        else:
+            return {"status": "FAILURE", "error": state.get("error", "Unknown internal error")}
+
+    try:
+        from api.celery_app import celery_app
+        task_result = celery_app.AsyncResult(task_id)
+
+        if task_result.state == 'PENDING':
+            response = {"status": task_result.state, "info": "Queued waiting for workers..."}
+        elif task_result.state != 'FAILURE':
+            response = {"status": task_result.state, "info": task_result.info.get('status', '') if isinstance(task_result.info, dict) else str(task_result.info)}
+            if task_result.state == 'SUCCESS':
+                response["result"] = task_result.get()
+        else:
+            response = {"status": task_result.state, "error": str(task_result.info)}
+        return response
+    except Exception as e:
+        logger.warning(f"Error querying celery result store: {e}")
+        return {"status": "FAILURE", "error": f"Lost connection to task backend: {e}"}
 
 # ─── Custom Rules Endpoint ──────────────────────────────────────────
 

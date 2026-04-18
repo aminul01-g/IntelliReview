@@ -18,21 +18,55 @@ export function RulesStudio() {
   const [ruleCode, setRuleCode] = useState(DEFAULT_RULE)
   const [testCode, setTestCode] = useState('db.execute("SELECT * FROM users")')
 
-   const testMutation = useMutation({
-      mutationFn: async () => {
-         // Use the correct backend endpoint for custom rule evaluation
-         const { data } = await api.post('/analysis/custom-rules', {
-            code: testCode,
-            language: 'python',
-            rules_yaml: ruleCode
-         });
-         return data;
-      }
-   })
 
-  // Safe mock for demo purposes if backend isn't up
-  const isPending = testMutation.isPending;
-  const matchResult = testMutation.data || (testMutation.isSuccess ? { matches: [{ start: 0, end: 32, matched_text: testCode }] } : null);
+    const [asyncTaskId, setAsyncTaskId] = useState<string | null>(null);
+    const [asyncResult, setAsyncResult] = useState<any>(null);
+    const [isPolling, setIsPolling] = useState(false);
+    const [pollError, setPollError] = useState<string | null>(null);
+
+    const testMutation = useMutation({
+         mutationFn: async () => {
+             // Use the correct backend endpoint for custom rule evaluation
+             const { data } = await api.post('/analysis/custom-rules', {
+                  code: testCode,
+                  language: 'python',
+                  rules_yaml: ruleCode
+             });
+             // If backend returns a task_id, poll for result
+             if (data.task_id) {
+                setAsyncTaskId(data.task_id);
+                setIsPolling(true);
+                setAsyncResult(null);
+                setPollError(null);
+                // Poll every 2s until result is ready
+                const poll = async () => {
+                   try {
+                      const statusRes = await api.get(`/analysis/custom-rules/status/${data.task_id}`);
+                      if (statusRes.data.status === 'SUCCESS' || statusRes.data.status === 'completed') {
+                         setAsyncResult(statusRes.data.result);
+                         setIsPolling(false);
+                      } else if (statusRes.data.status === 'FAILURE' || statusRes.data.status === 'failed') {
+                         setPollError(statusRes.data.error || 'Task failed');
+                         setIsPolling(false);
+                      } else if (isPolling) {
+                         setTimeout(poll, 2000);
+                      }
+                   } catch (err: any) {
+                      setPollError(err?.message || 'Polling error');
+                      setIsPolling(false);
+                   }
+                };
+                poll();
+                return null;
+             }
+             // Synchronous result
+             return data;
+         }
+    })
+
+    // Safe mock for demo purposes if backend isn't up
+    const isPending = testMutation.isPending || isPolling;
+    const matchResult = asyncResult || testMutation.data || (testMutation.isSuccess ? { matches: [{ start: 0, end: 32, matched_text: testCode }] } : null);
 
   return (
     <div className="space-y-6 flex flex-col h-[calc(100vh-8rem)]">

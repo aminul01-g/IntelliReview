@@ -25,13 +25,15 @@ export function useAnalysisTaskStatus(taskId: string | null) {
   return useQuery<AnalysisTaskResult>({
     queryKey: ['taskStatus', taskId],
     queryFn: async () => {
-      const response = await api.get<AnalysisTaskResult>(`/analysis/upload/status/${taskId}`);
+      if (!taskId) throw new Error('No taskId');
+      // Use the correct endpoint for diff/code snippet analysis
+      const response = await api.get<AnalysisTaskResult>(`/analysis/diff-review/status/${taskId}`);
       return response.data;
     },
     enabled: !!taskId,
     refetchInterval: (query: any) => {
       const status = query.state.data?.status;
-      if (status === 'completed' || status === 'failed') return false;
+      if (status === 'completed' || status === 'failed' || status === 'SUCCESS' || status === 'FAILURE') return false;
       return 2000;
     },
   });

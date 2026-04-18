@@ -65,61 +65,10 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any, taskId?: stri
     );
   }
 
-  return (
-    <div className="border border-destructive/20 bg-destructive/5 flex flex-col gap-3 rounded-md p-3 text-sm transition-opacity">
-      <div className="flex items-start gap-2">
-         <ShieldAlert className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-         <div className="flex-1">
-            <div className="font-semibold text-foreground flex items-center justify-between">
-              {suggestion.title || 'Security Vulnerability Detected'}
-              <span className="px-2 py-0.5 rounded-full bg-destructive/10 text-destructive text-[10px] font-mono border border-destructive/20 tracking-wider">
-                {suggestion.rule_id || 'CWE-89'}
-              </span>
-            </div>
-            <p className="text-muted-foreground mt-1 line-clamp-2 leading-relaxed">{suggestion.description}</p>
-         </div>
-      </div>
-      
-      {suggestion.fix && (
-        <div className="bg-background/80 border border-border rounded p-2.5 text-xs font-mono text-muted-foreground overflow-x-auto">
-          {suggestion.fix}
-        </div>
-      )}
 
-      <div className="flex flex-wrap items-center gap-2 mt-1 border-t border-destructive/10 pt-3">
-        <button
-          onClick={() => handleAction('accept')}
-          disabled={telemetry.isPending}
-          className="bg-green-500/10 hover:bg-green-500/20 text-green-500 border border-green-500/20 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
-        >
-          <Check className="h-3.5 w-3.5" /> Accept Fix
-        </button>
-        <button
-          onClick={() => handleAction('reject')}
-          disabled={telemetry.isPending}
-          className="bg-transparent hover:bg-muted/50 text-muted-foreground border border-border px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
-        >
-          <X className="h-3.5 w-3.5" /> Reject (False Positive)
-        </button>
-        <button
-          onClick={handleRequestBetterFix}
-          disabled={requestBetterFix.isPending}
-          className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 border border-blue-500/20 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
-        >
-          <Lucide.Wand2 className="h-3.5 w-3.5" /> Request Better Fix
-        </button>
-        <button
-          onClick={handleIgnorePattern}
-          disabled={ignorePattern.isPending}
-          className="bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/20 px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
-        >
-          <Lucide.EyeOff className="h-3.5 w-3.5" /> Ignore Pattern
-        </button>
-        {feedbackMsg && <span className="text-xs text-muted-foreground ml-2">{feedbackMsg}</span>}
-      </div>
-    </div>
-  )
-}
+// ...existing code...
+
+
 
   const [diffInput, setDiffInput] = useState('');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -280,3 +229,5 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any, taskId?: stri
     </div>
   )
 }
+
+export default ReviewEngine

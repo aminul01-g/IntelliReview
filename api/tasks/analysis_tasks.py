@@ -344,6 +344,7 @@ async def _process_upload_async(self, task_id: str, user_id: int):
     except Exception as e:
         logger.warning(f"Auto-fix generation failed: {e}")
 
+    project_id = project_record.id if project_record else None
     db.close()
     
     # Cleanup scratch directory optionally
@@ -354,7 +355,7 @@ async def _process_upload_async(self, task_id: str, user_id: int):
         pass
 
     return {
-        "project_id": project_record.id if project_record else None,
+        "project_id": project_id,
         "plan_md": plan_md,
         "project_summary": project_summary_data,
         "ai_project_review": ai_project_review,

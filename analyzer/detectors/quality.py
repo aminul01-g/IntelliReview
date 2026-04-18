@@ -39,9 +39,31 @@ class QualityDetector:
         if syntax_issues:
             return syntax_issues  # Return immediately if syntax errors found
         
-        # 1. Check for unsafe functions (Expanded)
+        # 1. Check for unsafe functions and common anti-patterns
         unsafe_funcs = ['strcpy', 'strcat', 'sprintf', 'gets', 'scanf']
         for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            
+            # Anti-pattern: using namespace std
+            if 'using namespace std' in stripped:
+                issues.append({
+                    "type": "code_quality",
+                    "severity": "medium",
+                    "line": i,
+                    "message": "'using namespace std' pollutes the global namespace and can cause name collisions.",
+                    "suggestion": "Remove 'using namespace std;' and use the 'std::' prefix explicitly (e.g., 'std::cout')."
+                })
+                
+            # Performance: endl vs \n
+            if '<< endl' in line or '<<endl' in line:
+                issues.append({
+                    "type": "performance",
+                    "severity": "low",
+                    "line": i,
+                    "message": "Using 'endl' forces a stream flush, which can degrade performance.",
+                    "suggestion": "Prefer using '\\n' for newlines unless you explicitly need to flush the output stream."
+                })
+
             for func in unsafe_funcs:
                 if f"{func}(" in line:
                     issues.append({
@@ -417,7 +439,7 @@ class QualityDetector:
                 continue
             
             # Missing semicolon after statements (basic check)
-            if any(keyword in stripped for keyword in ['using namespace', 'include']) and not stripped.endswith(';') and not stripped.endswith('#'):
+            if stripped.startswith('using namespace') and not stripped.endswith(';'):
                 issues.append({
                     "type": "syntax_error",
                     "severity": "critical",

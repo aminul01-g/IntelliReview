@@ -66,7 +66,7 @@ class PRReviewOrchestrator:
             self.llm = HuggingFaceHub(
                 repo_id=model_name or "HuggingFaceH4/zephyr-7b-beta",
                 huggingfacehub_api_token=self.huggingface_api_key,
-                temperature=0.2
+                model_kwargs={"temperature": 0.2, "max_new_tokens": 512, "top_p": 0.95}
             )
         else:
             raise RuntimeError(f"Unknown backend: {self.backend}")
@@ -128,7 +128,12 @@ Format your output as a JSON list of Finding objects."""
             })
             
             # Simple manual JSON parse since it's a list
-            content = response.content.strip()
+            # Handle both BaseMessage (ChatModels) and str (LLMs)
+            if hasattr(response, "content"):
+                content = response.content.strip()
+            else:
+                content = str(response).strip()
+                
             if content.startswith("```json"):
                 content = content[7:-3].strip()
             

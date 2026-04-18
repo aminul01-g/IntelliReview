@@ -9,7 +9,14 @@ WORKDIR /build
 COPY go.mod go.sum* ./
 RUN go mod download 2>/dev/null || true
 
-# Copy source
+
+
+
+# Explicitly copy migrations directory into cmd/server/migrations before build step
+RUN mkdir -p cmd/server/migrations
+COPY migrations/*.sql cmd/server/migrations/
+
+# Copy source code
 COPY . .
 
 # Build static binary

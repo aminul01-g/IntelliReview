@@ -28,7 +28,7 @@ import (
 // The embed path is relative to this source file (cmd/server/main.go),
 // so ../../migrations reaches services/analysis-history/migrations/.
 //
-//go:embed ../../migrations/*.sql
+//go:embed migrations/*.sql
 var migrationsFS embed.FS
 
 func main() {

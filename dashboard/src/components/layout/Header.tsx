@@ -1,10 +1,15 @@
 import React, { useState, useRef } from 'react'
 import { Bell, Search, User, LogOut, Settings } from 'lucide-react'
+import * as LucideAll from 'lucide-react'
+const Sun = (LucideAll as any).Sun || Settings
+const Moon = (LucideAll as any).Moon || Settings
 import { useAuth } from '@/contexts/AuthContext'
+import { useTheme } from '@/contexts/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 
 export function Header() {
   const { user, isAuthenticated, logout, isLoading } = useAuth()
+  const { theme, toggleTheme } = useTheme() as any
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
@@ -25,6 +30,11 @@ export function Header() {
     navigate('/login')
   }
 
+  // Open command palette via custom event
+  const openCommandPalette = () => {
+    window.dispatchEvent(new CustomEvent('intellireview:command-palette'))
+  }
+
   return (
     <header className="h-16 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 flex items-center justify-between px-6">
       <div className="flex items-center gap-4 flex-1">
@@ -34,13 +44,31 @@ export function Header() {
         </div>
       </div>
       <div className="flex items-center gap-4">
-        <button className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-border bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors w-64 justify-start">
+        <button
+          onClick={openCommandPalette}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border border-border bg-muted/30 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors w-64 justify-start"
+        >
           <Search className="h-4 w-4" />
           <span className="flex-1 text-left">Search...</span>
           <kbd className="hidden md:inline-flex h-5 items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100">
             <span className="text-xs">⌘</span>K
           </kbd>
         </button>
+
+        {/* Theme toggle */}
+        <button
+          onClick={toggleTheme}
+          className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-all outline-none group"
+          aria-label="Toggle theme"
+          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+        >
+          {theme === 'dark' ? (
+            <Sun className="h-4 w-4 text-yellow-400 group-hover:rotate-45 transition-transform" />
+          ) : (
+            <Moon className="h-4 w-4 text-indigo-500 group-hover:-rotate-12 transition-transform" />
+          )}
+        </button>
+
         <div className="flex items-center gap-2">
           <span className="flex h-2 w-2 rounded-full bg-green-500"></span>
           <span className="text-xs text-muted-foreground font-medium hidden md:inline-block">API Connected</span>

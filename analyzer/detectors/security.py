@@ -20,9 +20,56 @@ class SecurityScanner:
         
         return issues
     
+    # Python-specific dangerous patterns for in-memory regex scanning.
+    # Bandit only works on files on disk; these patterns catch critical CWEs
+    # when code is analysed via the API (in-memory strings).
+    _PYTHON_PATTERNS = [
+        (r'\beval\s*\(',
+         "Use of eval() detected — allows arbitrary code execution.",
+         "Avoid eval(). Use ast.literal_eval() for safe data parsing, or restructure logic entirely.",
+         "CWE-95", "high",
+         "https://cwe.mitre.org/data/definitions/95.html"),
+        (r'\bexec\s*\(',
+         "Use of exec() detected — allows arbitrary code execution.",
+         "Remove exec() and replace with explicit logic or a safe sandbox.",
+         "CWE-95", "high",
+         "https://cwe.mitre.org/data/definitions/95.html"),
+        (r'\bos\.system\s*\(',
+         "os.system() call detected — vulnerable to command injection.",
+         "Use subprocess.run() with a list of arguments (no shell=True).",
+         "CWE-78", "critical",
+         "https://cwe.mitre.org/data/definitions/78.html"),
+        (r'\bsubprocess\.\w+\s*\(.*shell\s*=\s*True',
+         "subprocess with shell=True enables shell injection attacks.",
+         "Pass arguments as a list and remove shell=True.",
+         "CWE-78", "high",
+         "https://cwe.mitre.org/data/definitions/78.html"),
+        (r'\bpickle\.loads?\s*\(',
+         "Deserialization of untrusted data via pickle — remote code execution risk.",
+         "Use JSON or a safe serialisation format. Never unpickle untrusted data.",
+         "CWE-502", "critical",
+         "https://cwe.mitre.org/data/definitions/502.html"),
+        (r'__import__\s*\(',
+         "Dynamic import via __import__() — code injection vector.",
+         "Use explicit imports. If dynamic loading is required, validate against an allow-list.",
+         "CWE-94", "medium",
+         "https://cwe.mitre.org/data/definitions/94.html"),
+        (r'yaml\.load\s*\([^)]*\)\s*(?!.*Loader)',
+         "yaml.load() without explicit Loader is unsafe — allows code execution.",
+         "Use yaml.safe_load() instead of yaml.load().",
+         "CWE-502", "high",
+         "https://cwe.mitre.org/data/definitions/502.html"),
+        (r'\.format\s*\(.*\)\s*$',
+         "String .format() used in potential SQL/command context — injection risk.",
+         "Use parameterised queries or template engines with auto-escaping.",
+         "CWE-89", "medium",
+         "https://owasp.org/www-community/attacks/SQL_Injection"),
+    ]
+
     def _scan_python(self, code: str, filename: str) -> List[Dict]:
-        """Scan Python code with Bandit."""
+        """Scan Python code with Bandit + regex fallback."""
         issues = []
+        bandit_found = set()  # Track lines Bandit already flagged
         
         try:
             # Use Bandit for Python security analysis
@@ -47,10 +94,65 @@ class SecurityScanner:
                     "cwe": f"CWE-{cwe_id}" if cwe_id else None,
                     "reference_url": ref_url
                 })
+                bandit_found.add(issue.lineno)
         
         except Exception as e:
-            # Fallback to regex-based detection
+            # Bandit failed (e.g. file not on disk) — regex fallback handles it
             pass
+        
+        # Always run regex patterns to catch issues Bandit missed (in-memory analysis)
+        issues.extend(self._scan_python_regex(code, bandit_found))
+        
+        return issues
+    
+    def _scan_python_regex(self, code: str, skip_lines: set = None) -> List[Dict]:
+        """Regex-based Python security scanner for in-memory code analysis.
+        
+        Supplements Bandit by catching dangerous patterns when code is not on disk.
+        Skips lines already flagged by Bandit to avoid duplicates.
+        """
+        issues = []
+        skip_lines = skip_lines or set()
+        lines = code.split('\n')
+        
+        for i, line in enumerate(lines, 1):
+            if i in skip_lines:
+                continue
+            stripped = line.strip()
+            if stripped.startswith('#'):
+                continue  # Skip comments
+            
+            for pattern, message, suggestion, cwe, severity, ref_url in self._PYTHON_PATTERNS:
+                if re.search(pattern, line):
+                    issues.append({
+                        "type": "security_vulnerability",
+                        "severity": severity,
+                        "line": i,
+                        "message": message,
+                        "suggestion": suggestion,
+                        "cwe": cwe,
+                        "reference_url": ref_url
+                    })
+        
+        # Python-specific SQL injection: string concatenation in queries
+        for i, line in enumerate(lines, 1):
+            if i in skip_lines:
+                continue
+            # Catches: "SELECT ... " + variable, f"SELECT ... {var}"
+            if re.search(r'["\']SELECT\s.*["\']\s*\+', line, re.IGNORECASE) or \
+               re.search(r'f["\']SELECT\s.*\{', line, re.IGNORECASE) or \
+               re.search(r'["\']INSERT\s.*["\']\s*\+', line, re.IGNORECASE) or \
+               re.search(r'["\']DELETE\s.*["\']\s*\+', line, re.IGNORECASE) or \
+               re.search(r'["\']UPDATE\s.*["\']\s*\+', line, re.IGNORECASE):
+                issues.append({
+                    "type": "security_vulnerability",
+                    "severity": "critical",
+                    "line": i,
+                    "message": "SQL query built via string concatenation — SQL Injection risk.",
+                    "suggestion": "Use parameterized queries (e.g., cursor.execute('SELECT ... WHERE id = %s', (id,))).",
+                    "cwe": "CWE-89",
+                    "reference_url": "https://owasp.org/www-community/attacks/SQL_Injection"
+                })
         
         return issues
     

@@ -79,12 +79,24 @@ SENSITIVE_SINKS = frozenset({
 
 
 @dataclass
+class CalibrationEvent:
+    """Records a single demotion/promotion decision for telemetry."""
+    finding_id: str
+    issue_type: str
+    original_severity: str
+    calibrated_severity: str
+    reason: str
+    step: str  # which calibration step triggered this
+
+
+@dataclass
 class CalibratedResult:
     """Output of the SeverityOrchestrator calibration pass."""
     important_findings: List[ReviewFinding] = field(default_factory=list)
     nit_summary: Optional[NitSummary] = None
     preexisting_findings: List[ReviewFinding] = field(default_factory=list)
     calibration_log: List[str] = field(default_factory=list)
+    calibration_events: List[CalibrationEvent] = field(default_factory=list)
 
 
 class SeverityOrchestrator:
@@ -96,13 +108,24 @@ class SeverityOrchestrator:
         result = orchestrator.calibrate(raw_findings, knowledge_base=pattern_learner)
     """
 
+    # All calibration step names (used by enabled_steps for ablation)
+    ALL_STEPS = frozenset({
+        "config_override",
+        "kb_demotion",
+        "dataflow_boost",
+        "design_constraint",
+        "reachability",
+    })
+
     def __init__(
         self,
         project_root: Optional[str] = None,
         nit_cap: int = NIT_VOLUME_CAP,
+        enabled_steps: Optional[set] = None,
     ):
         self.project_root = Path(project_root) if project_root else None
         self.nit_cap = nit_cap
+        self.enabled_steps = enabled_steps if enabled_steps is not None else set(self.ALL_STEPS)
         self._project_config = self._load_project_config()
         self._design_constraints = self._load_design_constraints()
 
@@ -130,12 +153,14 @@ class SeverityOrchestrator:
         """
         calibrated: List[ReviewFinding] = []
         log: List[str] = []
+        events: List[CalibrationEvent] = []
 
         for raw in raw_findings:
-            finding, reason = self._calibrate_single(
+            finding, reason, finding_events = self._calibrate_single(
                 raw, knowledge_base, dataflow_traces or {}
             )
             calibrated.append(finding)
+            events.extend(finding_events)
             if reason:
                 log.append(reason)
 
@@ -157,6 +182,7 @@ class SeverityOrchestrator:
             nit_summary=nit_summary,
             preexisting_findings=preexisting,
             calibration_log=log,
+            calibration_events=events,
         )
 
     # ─── Single Finding Calibration ───────────────────────────────────
@@ -167,28 +193,39 @@ class SeverityOrchestrator:
         knowledge_base: Optional[Any],
         dataflow_traces: Dict[str, DataflowTrace],
     ) -> Tuple[ReviewFinding, Optional[str]]:
-        """Calibrate a single raw finding. Returns (ReviewFinding, calibration_reason)."""
+        """Calibrate a single raw finding. Returns (ReviewFinding, calibration_reason, events)."""
         finding_id = raw.get("id") or self._generate_finding_id(raw)
         raw_severity = raw.get("severity", "medium")
         raw_type = raw.get("type", "unknown")
+        events: List[CalibrationEvent] = []
 
         # Step 1: Base severity from raw mapping
         severity = _RAW_TO_CALIBRATED.get(raw_severity, SeverityLevel.nit)
         category = _RAW_TYPE_TO_CATEGORY.get(raw_type, FindingCategory.style)
         reason_parts: List[str] = []
+        original_severity = severity.value
 
         # Step 2: Project config severity overrides
-        config_severity = self._get_config_severity_override(raw_type)
-        if config_severity is not None:
-            old_sev = severity
-            severity = config_severity
-            if old_sev != severity:
-                reason_parts.append(
-                    f"Config override: {old_sev.value} → {severity.value}"
-                )
+        if "config_override" in self.enabled_steps:
+            config_severity = self._get_config_severity_override(raw_type)
+            if config_severity is not None:
+                old_sev = severity
+                severity = config_severity
+                if old_sev != severity:
+                    reason_parts.append(
+                        f"Config override: {old_sev.value} → {severity.value}"
+                    )
+                    events.append(CalibrationEvent(
+                        finding_id=finding_id,
+                        issue_type=raw_type,
+                        original_severity=old_sev.value,
+                        calibrated_severity=severity.value,
+                        reason=f"Config override: {old_sev.value} → {severity.value}",
+                        step="config_override",
+                    ))
 
         # Step 3: Knowledge Base demotion (high rejection rate → demote to nit)
-        if knowledge_base and severity == SeverityLevel.important:
+        if "kb_demotion" in self.enabled_steps and knowledge_base and severity == SeverityLevel.important:
             acceptance_rate = knowledge_base.get_acceptance_rate(raw_type)
             stats = knowledge_base.patterns.get(raw_type, {})
             total_samples = stats.get("total", 0)
@@ -197,33 +234,62 @@ class SeverityOrchestrator:
                 total_samples >= MIN_SAMPLES_FOR_DEMOTION
                 and (1 - acceptance_rate) > REJECTION_RATE_DEMOTION_THRESHOLD
             ):
+                old_sev = severity
                 severity = SeverityLevel.nit
                 reason_parts.append(
                     f"KB demotion: {raw_type} has {1 - acceptance_rate:.0%} rejection "
                     f"rate over {total_samples} samples"
                 )
+                events.append(CalibrationEvent(
+                    finding_id=finding_id,
+                    issue_type=raw_type,
+                    original_severity=old_sev.value,
+                    calibrated_severity=severity.value,
+                    reason=f"KB demotion: {1 - acceptance_rate:.0%} rejection over {total_samples} samples",
+                    step="kb_demotion",
+                ))
 
         # Step 4: Dataflow severity boost
         trace = dataflow_traces.get(finding_id)
-        if trace and not trace.is_sanitized:
+        if "dataflow_boost" in self.enabled_steps and trace and not trace.is_sanitized:
             if severity != SeverityLevel.important:
+                old_sev = severity
                 severity = SeverityLevel.important
                 reason_parts.append(
                     f"Dataflow boost: untrusted input reaches sink "
                     f"({trace.source.expression} → {trace.sink.expression})"
                 )
+                events.append(CalibrationEvent(
+                    finding_id=finding_id,
+                    issue_type=raw_type,
+                    original_severity=old_sev.value,
+                    calibrated_severity=severity.value,
+                    reason=f"Dataflow boost: {trace.source.expression} → {trace.sink.expression}",
+                    step="dataflow_boost",
+                ))
 
         # Step 5: DESIGN.md constraint violation boost
-        design_violation = self._check_design_constraints(raw)
-        if design_violation:
-            if severity != SeverityLevel.important:
-                severity = SeverityLevel.important
-                reason_parts.append(
-                    f"Architecture violation: {design_violation}"
-                )
+        design_violation = None
+        if "design_constraint" in self.enabled_steps:
+            design_violation = self._check_design_constraints(raw)
+            if design_violation:
+                if severity != SeverityLevel.important:
+                    old_sev = severity
+                    severity = SeverityLevel.important
+                    reason_parts.append(
+                        f"Architecture violation: {design_violation}"
+                    )
+                    events.append(CalibrationEvent(
+                        finding_id=finding_id,
+                        issue_type=raw_type,
+                        original_severity=old_sev.value,
+                        calibrated_severity=severity.value,
+                        reason=f"Architecture violation: {design_violation}",
+                        step="design_constraint",
+                    ))
 
         # Step 6: Semantic Reachability analysis (demotion for unreachable findings)
-        if severity == SeverityLevel.important:
+        if "reachability" in self.enabled_steps and severity == SeverityLevel.important:
             temp_finding = ReviewFinding(
                 id=finding_id,
                 severity=severity,
@@ -236,8 +302,17 @@ class SeverityOrchestrator:
             )
             is_reachable = self.reachability_analyzer.evaluate_reachability(temp_finding)
             if not is_reachable:
+                old_sev = severity
                 severity = SeverityLevel.preexisting
                 reason_parts.append("Reachability check: 🟢 UNREACHABLE from external entry point. Demoted to Preexisting.")
+                events.append(CalibrationEvent(
+                    finding_id=finding_id,
+                    issue_type=raw_type,
+                    original_severity=old_sev.value,
+                    calibrated_severity=severity.value,
+                    reason="Unreachable from entry points",
+                    step="reachability",
+                ))
 
         # Build the calibrated finding
         calibration_reason = "; ".join(reason_parts) if reason_parts else None
@@ -262,7 +337,7 @@ class SeverityOrchestrator:
             calibration_reason=calibration_reason,
         )
 
-        return finding, calibration_reason
+        return finding, calibration_reason, events
 
     # ─── Nit Volume Cap ───────────────────────────────────────────────
 

@@ -2,6 +2,8 @@
 import React from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, History, FileCode, Code, Settings, UploadCloud, Activity, User, Shield } from 'lucide-react'
+import * as LucideAll from 'lucide-react'
+const FlaskConical = (LucideAll as any).FlaskConical || Activity
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -12,6 +14,7 @@ const navItems = [
   { name: 'Review Engine', to: '/review', icon: FileCode },
   { name: 'Rules Studio', to: '/rules', icon: Code },
   { name: 'Metrics', to: '/metrics', icon: Activity },
+  { name: 'Research', to: '/research', icon: FlaskConical },
   { name: 'Scan History', to: '/history', icon: History },
   { name: 'Profile', to: '/profile', icon: User },
 ]

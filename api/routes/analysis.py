@@ -199,11 +199,11 @@ async def analyze_code(
                     cluster_ref = issue["_ai_cluster_ref"]
                     # Find which task it corresponded to
                     try:
-                        res_idx = [c["center_line"] for c in clusters[:ai_limit]].index(cluster_ref["center_line"])
+                        res_idx = [c["center_line"] for c in clusters[:ai_limit]].index(cluster_ref.get("line", cluster_ref.get("center_line")))
                         ai_suggestion = ai_results[res_idx]
                         issue["suggestion"] = ai_suggestion.get("suggestion", issue.get("suggestion"))
                         issue["confidence"] = ai_suggestion.get("confidence", 0.5)
-                    except ValueError:
+                    except (ValueError, KeyError):
                         pass
                     del issue["_ai_cluster_ref"]
         

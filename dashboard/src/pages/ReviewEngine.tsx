@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import * as Lucide from 'lucide-react'
 
-const { FileCode, Play, AlertCircle, CheckCircle } = Lucide as any
-import { useSubmitAnalysis, useAnalysisTaskStatus } from '@/hooks/useAnalysisTask'
+const { FileCode, Play, AlertCircle, CheckCircle, Code, GitBranch } = Lucide as any
+import { useSubmitAnalysis, useAnalysisTaskStatus, useSubmitSnippetAnalysis, isDiffFormat, guessLanguage } from '@/hooks/useAnalysisTask'
 import { useTelemetryFeedback } from '@/hooks/useTelemetryFeedback'
 import { useReviewFeedback } from '@/hooks/useReviewFeedback'
 
@@ -125,8 +125,17 @@ const ReviewEngine = () => {
   const [fallbackDetected, setFallbackDetected] = useState(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const submitMutation = useSubmitAnalysis()
+  // Dual-mode: snippet analysis (synchronous) vs diff review (async/polling)
+  const [snippetResult, setSnippetResult] = useState<any>(null)
+  const [snippetError, setSnippetError] = useState<string | null>(null)
+
+  const submitDiffMutation = useSubmitAnalysis()
+  const submitSnippetMutation = useSubmitSnippetAnalysis()
   const { data: taskData, isLoading: isPolling } = useAnalysisTaskStatus(activeTaskId)
+
+  // Auto-detect mode from input
+  const detectedMode = diffInput.trim() ? (isDiffFormat(diffInput) ? 'diff' : 'snippet') : null
+  const detectedLanguage = detectedMode === 'snippet' ? guessLanguage(diffInput) : null
 
   useEffect(() => {
     setTimeoutReached(false)
@@ -159,56 +168,109 @@ const ReviewEngine = () => {
     e.preventDefault()
     if (!diffInput.trim()) return
 
-    submitMutation.mutate(
-      { diff: diffInput },
-      {
-        onSuccess: (data: any) => {
-          setActiveTaskId(data.task_id)
+    // Reset previous results
+    setSnippetResult(null)
+    setSnippetError(null)
+    setActiveTaskId(null)
+
+    if (isDiffFormat(diffInput)) {
+      // ── Diff mode: async via Celery/fallback ──
+      submitDiffMutation.mutate(
+        { diff: diffInput },
+        {
+          onSuccess: (data: any) => {
+            setActiveTaskId(data.task_id)
+          }
         }
-      }
-    )
+      )
+    } else {
+      // ── Snippet mode: synchronous full static analysis ──
+      const language = guessLanguage(diffInput)
+      submitSnippetMutation.mutate(
+        { code: diffInput, language, filename: `review.${language === 'python' ? 'py' : language === 'javascript' ? 'js' : language === 'java' ? 'java' : 'py'}` },
+        {
+          onSuccess: (data: any) => {
+            setSnippetResult(data)
+          },
+          onError: (error: any) => {
+            setSnippetError(error?.response?.data?.detail || error?.message || 'Analysis failed')
+          }
+        }
+      )
+    }
   }
 
-  const isAnalyzing = Boolean((isPolling && activeTaskId) || taskData?.status === 'processing' || taskData?.status === 'PENDING')
-  const isCompleted = taskData?.status === 'SUCCESS' || taskData?.status === 'completed'
-  const isFailed = taskData?.status === 'FAILURE' || taskData?.status === 'failed'
-  const issues = taskData?.result?.findings || taskData?.result?.issues || []
-  const verdict = taskData?.result?.verdict
-  const totalDebtHours = taskData?.result?.total_debt_hours
+  // ── Compute display state from either mode ──
+  const isSubmitting = submitDiffMutation.isPending || submitSnippetMutation.isPending
+  const isAnalyzingDiff = Boolean((isPolling && activeTaskId) || taskData?.status === 'processing' || taskData?.status === 'PENDING')
+  const isAnalyzing = isSubmitting || isAnalyzingDiff
+
+  // Diff mode results
+  const diffCompleted = taskData?.status === 'SUCCESS' || taskData?.status === 'completed'
+  const diffFailed = taskData?.status === 'FAILURE' || taskData?.status === 'failed'
+  const diffIssues = taskData?.result?.findings || taskData?.result?.issues || []
+  const diffVerdict = taskData?.result?.verdict
+  const diffDebtHours = taskData?.result?.total_debt_hours
+
+  // Snippet mode results
+  const snippetCompleted = snippetResult !== null
+  const snippetIssues = snippetResult?.issues || []
+  const snippetMetrics = snippetResult?.metrics
+
+  // Unified state
+  const hasResults = snippetCompleted || diffCompleted
+  const hasFailed = diffFailed || snippetError !== null
+  const issues = snippetCompleted ? snippetIssues : diffIssues
+  const verdict = snippetCompleted
+    ? (snippetIssues.length > 0
+        ? `Found ${snippetIssues.length} issue${snippetIssues.length !== 1 ? 's' : ''} across ${snippetMetrics?.lines_of_code ?? '?'} lines of code.`
+        : 'No issues found — code looks clean.')
+    : diffVerdict
+  const totalDebtHours = snippetCompleted ? undefined : diffDebtHours
 
   return (
     <div className="space-y-6 flex flex-col h-[calc(100vh-8rem)]">
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Review Engine</h1>
-          <p className="text-muted-foreground">Interactive AI diff review and telemetry feedback.</p>
+          <p className="text-muted-foreground">Paste code or a git diff for instant security and quality analysis.</p>
         </div>
+        {detectedMode && (
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+            detectedMode === 'snippet'
+              ? 'bg-blue-500/10 text-blue-500 border-blue-500/30'
+              : 'bg-purple-500/10 text-purple-500 border-purple-500/30'
+          }`}>
+            {detectedMode === 'snippet' ? <Code className="h-3.5 w-3.5" /> : <GitBranch className="h-3.5 w-3.5" />}
+            {detectedMode === 'snippet' ? `Code Snippet · ${detectedLanguage}` : 'Unified Diff'}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
         <div className="flex flex-col gap-4 border border-border rounded-lg bg-card p-4 min-h-0">
           <div className="flex items-center gap-2 text-sm font-medium border-b border-border pb-2 shrink-0">
-            <FileCode className="h-4 w-4" /> Git Diff Input
+            <FileCode className="h-4 w-4" /> Code / Diff Input
           </div>
           <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-4 min-h-0">
             <textarea
               className="flex-1 bg-background border border-input rounded-md p-3 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none leading-relaxed"
-              placeholder="Paste your git diff or code snippet here..."
+              placeholder={"Paste Python, JavaScript, Java, or C++ code here...\n\nOr paste a unified diff (git diff output) for tech debt review.\n\nThe engine auto-detects the input format."}
               value={diffInput}
               onChange={(e) => setDiffInput(e.target.value)}
-              disabled={isAnalyzing || submitMutation.isPending}
+              disabled={isAnalyzing}
             />
             <button
               type="submit"
-              disabled={isAnalyzing || submitMutation.isPending || !diffInput.trim()}
+              disabled={isAnalyzing || !diffInput.trim()}
               className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 rounded-md font-medium text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
             >
-              {isAnalyzing || submitMutation.isPending ? (
+              {isAnalyzing ? (
                 <div className="h-4 w-4 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
               ) : (
                 <Play className="h-4 w-4 fill-current" />
               )}
-              {isAnalyzing ? 'Analyzing with Multi-Agent Pipeline...' : 'Run Security Analysis'}
+              {isAnalyzing ? 'Analyzing...' : 'Run Security Analysis'}
             </button>
           </form>
         </div>
@@ -216,19 +278,19 @@ const ReviewEngine = () => {
         <div className="flex flex-col gap-4 border border-border rounded-lg bg-card p-4 relative min-h-0 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-medium border-b border-border pb-2 shrink-0">
             Results & Telemetry
-            {isAnalyzing && (
+            {isAnalyzingDiff && (
               <span className="ml-auto text-xs font-semibold text-primary animate-pulse tracking-wide">
                 AI processing task {activeTaskId?.slice(0, 6)}...
               </span>
             )}
           </div>
 
-          {!activeTaskId ? (
+          {!hasResults && !hasFailed && !isAnalyzing ? (
             <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm flex-col gap-3">
               <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-2">
                 <FileCode className="h-6 w-6 opacity-40" />
               </div>
-              Waiting for diff input...
+              Waiting for input...
             </div>
           ) : isAnalyzing ? (
             <div className="flex-1 flex flex-col gap-5 pt-4">
@@ -260,26 +322,35 @@ const ReviewEngine = () => {
                 </>
               )}
             </div>
-          ) : isFailed ? (
+          ) : hasFailed ? (
             <div className="flex-1 flex items-center justify-center text-destructive flex-col gap-2">
               <AlertCircle className="h-10 w-10 mb-2 opacity-80" />
-              <span className="font-semibold text-lg tracking-tight">Analysis Task Failed</span>
-              <span className="text-sm opacity-80">The Celery backend worker encountered an error.</span>
+              <span className="font-semibold text-lg tracking-tight">Analysis Failed</span>
+              <span className="text-sm opacity-80">{snippetError || 'The backend worker encountered an error.'}</span>
             </div>
-          ) : isCompleted ? (
+          ) : hasResults ? (
             <div className="flex-1 flex flex-col gap-4 overflow-hidden">
               <div className="bg-green-500/10 text-green-500 border border-green-500/20 rounded-md p-3 text-sm flex items-start gap-2 shrink-0">
                 <CheckCircle className="h-5 w-5 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-semibold">Analysis Complete</p>
-                  <p className="opacity-90 mt-0.5 text-xs">Awaiting your feedback on these suggestions to refine our False Positive Rates.</p>
+                  <p className="opacity-90 mt-0.5 text-xs">
+                    {issues.length > 0
+                      ? `Found ${issues.length} issue${issues.length !== 1 ? 's' : ''}. Review and provide feedback below.`
+                      : 'No issues detected.'}
+                  </p>
                 </div>
               </div>
               {verdict && (
-                <div className="bg-blue-500/10 text-blue-500 border border-blue-500/20 rounded-md p-3 text-sm flex items-start gap-2 shrink-0">
+                <div className={`${issues.length > 0 ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-blue-500/10 text-blue-500 border-blue-500/20'} border rounded-md p-3 text-sm flex items-start gap-2 shrink-0`}>
                   <div className="flex-1">
                     <p className="font-semibold">Analysis Summary</p>
                     <p className="opacity-90 mt-0.5">{verdict}</p>
+                    {snippetMetrics && (
+                      <p className="opacity-80 mt-1 text-xs">
+                        Lines: {snippetMetrics.lines_of_code} · Complexity: {snippetMetrics.complexity ?? 'N/A'} · Maintainability: {snippetMetrics.maintainability_index?.toFixed(1) ?? 'N/A'}
+                      </p>
+                    )}
                     {totalDebtHours !== undefined && (
                       <p className="opacity-80 mt-1 text-xs">Estimated technical debt: {totalDebtHours} hours</p>
                     )}
@@ -289,11 +360,11 @@ const ReviewEngine = () => {
               <div className="flex-1 overflow-auto space-y-4 pr-1 custom-scrollbar">
                 {issues.length === 0 ? (
                   <div className="text-muted-foreground text-sm text-center py-8">
-                    {verdict ? "Analysis completed successfully. No technical debt issues detected." : "No issues found in this analysis."}
+                    {verdict ? "Analysis completed successfully. No issues detected." : "No issues found in this analysis."}
                   </div>
                 ) : (
                   issues.map((issue: any, index: number) => (
-                    <SuggestionCard key={index} suggestion={issue} taskId={activeTaskId} />
+                    <SuggestionCard key={index} suggestion={issue} taskId={activeTaskId ?? undefined} />
                   ))
                 )}
               </div>

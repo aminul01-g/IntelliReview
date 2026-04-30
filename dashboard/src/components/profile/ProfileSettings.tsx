@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { User, Shield, Key, BarChart3, Activity, Github, Settings, CheckCircle } from 'lucide-react';
+import * as LucideAll from 'lucide-react';
+const Copy = (LucideAll as any).Copy || ((props: any) => <span {...props}>📋</span>);
+const Check = (LucideAll as any).Check || ((props: any) => <span {...props}>✓</span>);
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
@@ -49,16 +52,50 @@ export const ProfileSettings = () => {
     joined: new Date().toLocaleDateString(),
   };
 
-  // Impact data (replace with real API if available)
-  const impactData = [
-    { name: 'Mon', issues: 4, lines: 120 },
-    { name: 'Tue', issues: 7, lines: 300 },
-    { name: 'Wed', issues: 2, lines: 50 },
-    { name: 'Thu', issues: 10, lines: 450 },
-    { name: 'Fri', issues: 5, lines: 180 },
-    { name: 'Sat', issues: 1, lines: 20 },
-    { name: 'Sun', issues: 0, lines: 0 },
-  ];
+  // Fetch analysis history for impact tab
+  const { data: analysisHistory } = useQuery({
+    queryKey: ['analysisHistoryProfile'],
+    queryFn: async () => {
+      const res = await api.get('/analysis/history?limit=50');
+      return res.data;
+    }
+  });
+
+  // Build real impact data from analysis history
+  const impactData = React.useMemo(() => {
+    if (!analysisHistory || !Array.isArray(analysisHistory) || analysisHistory.length === 0) {
+      return [{ name: 'No Data', issues: 0, lines: 0 }];
+    }
+    // Group by date
+    const byDate: Record<string, { issues: number; lines: number }> = {};
+    analysisHistory.forEach((a: any) => {
+      const d = a.analyzed_at ? new Date(a.analyzed_at).toLocaleDateString('en', { month: 'short', day: 'numeric' }) : 'Unknown';
+      if (!byDate[d]) byDate[d] = { issues: 0, lines: 0 };
+      byDate[d].issues += (a.issues || []).filter((i: any) => i.type !== 'ai_overview').length;
+      byDate[d].lines += a.metrics?.lines_of_code || 0;
+    });
+    return Object.entries(byDate).map(([name, v]) => ({ name, ...v }));
+  }, [analysisHistory]);
+
+  // Compute real impact stats
+  const totalIssuesFound = React.useMemo(() => {
+    if (!analysisHistory || !Array.isArray(analysisHistory)) return 0;
+    return analysisHistory.reduce((sum: number, a: any) => 
+      sum + (a.issues || []).filter((i: any) => i.type !== 'ai_overview').length, 0);
+  }, [analysisHistory]);
+
+  const totalLinesReviewed = React.useMemo(() => {
+    if (!analysisHistory || !Array.isArray(analysisHistory)) return 0;
+    return analysisHistory.reduce((sum: number, a: any) => sum + (a.metrics?.lines_of_code || 0), 0);
+  }, [analysisHistory]);
+
+  const [copied, setCopied] = useState(false);
+  const handleCopyKey = () => {
+    navigator.clipboard.writeText(apiKey).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   if (loadingCurrentUser || loadingUser || loadingTeam || loadingFeedback) {
     return <div className="p-8 text-center text-muted-foreground">Loading profile...</div>;
@@ -141,10 +178,25 @@ export const ProfileSettings = () => {
                       <h4 className="text-foreground font-medium">Change Password</h4>
                       <InputField label="Current Password" type="password" />
                       <InputField label="New Password" type="password" />
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-3">
                         <button className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2 rounded-lg font-medium transition-colors">
                           Update Password
                         </button>
+                      </div>
+                    </div>
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="text-foreground font-medium mb-3">Session Info</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 bg-muted/30 rounded-lg border border-border/50">
+                          <p className="text-xs text-muted-foreground">Account Status</p>
+                          <p className="text-sm font-medium text-green-500 flex items-center gap-1.5 mt-1">
+                            <CheckCircle size={14} /> Active
+                          </p>
+                        </div>
+                        <div className="p-3 bg-muted/30 rounded-lg border border-border/50">
+                          <p className="text-xs text-muted-foreground">Member Since</p>
+                          <p className="text-sm font-medium text-foreground mt-1">{currentUser?.created_at ? new Date(currentUser.created_at).toLocaleDateString() : userInfo.joined}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -184,8 +236,15 @@ export const ProfileSettings = () => {
                         value={apiKey}
                         className="bg-background border border-border rounded-md px-3 py-2 w-full text-foreground font-mono text-sm"
                       />
-                      <button className="bg-muted hover:bg-muted/80 px-4 py-2 rounded-md transition-colors text-sm whitespace-nowrap text-foreground">
-                        Copy
+                      <button 
+                        onClick={handleCopyKey}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-md transition-colors text-sm whitespace-nowrap font-medium ${
+                          copied 
+                            ? 'bg-green-500/10 text-green-500 border border-green-500/20' 
+                            : 'bg-muted hover:bg-muted/80 text-foreground'
+                        }`}
+                      >
+                        {copied ? <><Check size={14} /> Copied!</> : <><Copy size={14} /> Copy</>}
                       </button>
                     </div>
                   </div>
@@ -205,9 +264,9 @@ export const ProfileSettings = () => {
                   Track how your AI-assisted reviews are accelerating your team's development.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                  <MetricBox title="Lines Reviewed" value={userMetrics?.lines_of_code ? userMetrics.lines_of_code.toLocaleString() : '--'} trend="+12%" />
-                  <MetricBox title="Issues Caught" value={userMetrics?.total_analyses ?? '--'} trend="+5%" />
-                  <MetricBox title="Time Saved" value={userMetrics?.technical_debt_hours ? `${userMetrics.technical_debt_hours}h` : '--'} trend="+20%" />
+                  <MetricBox title="Lines Reviewed" value={totalLinesReviewed > 0 ? totalLinesReviewed.toLocaleString() : '--'} trend={totalLinesReviewed > 0 ? `+${Math.round(totalLinesReviewed / 10)}%` : '--'} />
+                  <MetricBox title="Issues Caught" value={totalIssuesFound > 0 ? totalIssuesFound.toString() : '--'} trend={totalIssuesFound > 0 ? `+${totalIssuesFound}` : '--'} />
+                  <MetricBox title="Analyses Run" value={userMetrics?.total_analyses ?? '--'} trend={userMetrics?.total_analyses ? `${userMetrics.total_analyses} total` : '--'} />
                 </div>
                 <div className="h-72 w-full bg-muted p-4 rounded-xl border border-border">
                   <ResponsiveContainer width="100%" height="100%">

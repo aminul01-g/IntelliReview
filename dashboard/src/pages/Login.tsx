@@ -1,7 +1,156 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Code, ArrowRight, ShieldCheck, Zap } from 'lucide-react'
+import { Code, ArrowRight, ShieldCheck, Zap, Activity } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+
+// ── Typewriter Code Analysis Demo ──────────────────────────────────────
+
+const codeLines = [
+  { text: 'import sqlite3', delay: 60 },
+  { text: '', delay: 200 },
+  { text: 'def get_user(name):', delay: 60 },
+  { text: '    conn = sqlite3.connect("db")', delay: 50 },
+  { text: '    query = f"SELECT * FROM users WHERE name=\'{name}\'"', delay: 40, issue: true },
+  { text: '    return conn.execute(query)', delay: 50 },
+  { text: '', delay: 200 },
+  { text: 'password = "admin123"', delay: 50, issue: true },
+  { text: 'eval(user_input)', delay: 50, issue: true },
+]
+
+const issueAnnotations = [
+  { line: 4, severity: 'CRITICAL', msg: 'SQL Injection — CWE-89', color: '#ef4444', delay: 1800 },
+  { line: 7, severity: 'CRITICAL', msg: 'Hardcoded password — CWE-798', color: '#ef4444', delay: 2800 },
+  { line: 8, severity: 'HIGH', msg: 'eval() usage — CWE-95', color: '#f97316', delay: 3400 },
+]
+
+function TypewriterDemo() {
+  const [displayedLines, setDisplayedLines] = useState<string[]>([])
+  const [currentLine, setCurrentLine] = useState(0)
+  const [currentChar, setCurrentChar] = useState(0)
+  const [visibleIssues, setVisibleIssues] = useState<number[]>([])
+  const [scanPhase, setScanPhase] = useState<'typing' | 'scanning' | 'done'>('typing')
+
+  // Typewriter effect
+  useEffect(() => {
+    if (currentLine >= codeLines.length) {
+      setScanPhase('scanning')
+      return
+    }
+
+    const line = codeLines[currentLine]
+    if (currentChar <= line.text.length) {
+      const timer = setTimeout(() => {
+        setDisplayedLines((prev) => {
+          const copy = [...prev]
+          copy[currentLine] = line.text.substring(0, currentChar)
+          return copy
+        })
+        setCurrentChar((c) => c + 1)
+      }, line.delay || 50)
+      return () => clearTimeout(timer)
+    } else {
+      setCurrentLine((l) => l + 1)
+      setCurrentChar(0)
+    }
+  }, [currentLine, currentChar])
+
+  // Issue annotations appear during scan phase
+  useEffect(() => {
+    if (scanPhase !== 'scanning') return
+
+    issueAnnotations.forEach((issue, idx) => {
+      setTimeout(() => {
+        setVisibleIssues((prev) => [...prev, idx])
+        if (idx === issueAnnotations.length - 1) {
+          setTimeout(() => setScanPhase('done'), 800)
+        }
+      }, (idx + 1) * 600)
+    })
+  }, [scanPhase])
+
+  // Restart loop
+  useEffect(() => {
+    if (scanPhase !== 'done') return
+    const timer = setTimeout(() => {
+      setDisplayedLines([])
+      setCurrentLine(0)
+      setCurrentChar(0)
+      setVisibleIssues([])
+      setScanPhase('typing')
+    }, 4000)
+    return () => clearTimeout(timer)
+  }, [scanPhase])
+
+  return (
+    <div className="w-full max-w-lg">
+      {/* Mac-style terminal */}
+      <div className="rounded-xl border border-border/50 bg-black/40 backdrop-blur-sm overflow-hidden shadow-2xl">
+        {/* Title bar */}
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-white/5 border-b border-white/10">
+          <div className="flex gap-1.5">
+            <div className="h-3 w-3 rounded-full bg-red-500/80" />
+            <div className="h-3 w-3 rounded-full bg-yellow-500/80" />
+            <div className="h-3 w-3 rounded-full bg-green-500/80" />
+          </div>
+          <span className="text-[11px] text-white/40 ml-2 font-mono">analysis_demo.py</span>
+          {scanPhase === 'scanning' && (
+            <span className="ml-auto text-[10px] text-primary animate-pulse font-mono">⟳ Scanning...</span>
+          )}
+          {scanPhase === 'done' && (
+            <span className="ml-auto text-[10px] text-red-400 font-mono">● 3 issues found</span>
+          )}
+        </div>
+
+        {/* Code area */}
+        <div className="p-4 font-mono text-[12px] leading-relaxed min-h-[220px] relative">
+          {displayedLines.map((line, idx) => {
+            const hasIssue = visibleIssues.some((i) => issueAnnotations[i].line === idx)
+            return (
+              <div key={idx} className="flex items-start gap-3 group">
+                <span className="text-white/20 text-[10px] w-4 text-right select-none shrink-0 pt-0.5">
+                  {idx + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <span className={`${hasIssue ? 'bg-red-500/15 border-b border-red-500/40' : ''} ${codeLines[idx]?.issue ? 'text-white/90' : 'text-white/60'}`}>
+                    {line}
+                  </span>
+                </div>
+              </div>
+            )
+          })}
+          {/* Cursor blink */}
+          {scanPhase === 'typing' && (
+            <span className="inline-block w-2 h-4 bg-primary/80 animate-pulse ml-8" />
+          )}
+        </div>
+      </div>
+
+      {/* Issue annotations that slide in */}
+      <div className="mt-4 space-y-2">
+        {visibleIssues.map((idx) => {
+          const issue = issueAnnotations[idx]
+          return (
+            <div
+              key={idx}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-card/60 backdrop-blur-sm animate-in slide-in-from-left-4 duration-300"
+            >
+              <span
+                className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider"
+                style={{ backgroundColor: `${issue.color}20`, color: issue.color }}
+              >
+                {issue.severity}
+              </span>
+              <span className="text-xs text-foreground/80">{issue.msg}</span>
+              <span className="ml-auto text-[10px] text-muted-foreground">L{issue.line + 1}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Login Form ─────────────────────────────────────────────────────────
 
 export function Login() {
   const [isRegister, setIsRegister] = useState(false)
@@ -34,11 +183,12 @@ export function Login() {
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Left side - Dynamic Splash Screen */}
+      {/* Left side - Animated Splash */}
       <div className="hidden lg:flex w-1/2 bg-secondary/30 relative flex-col items-start justify-center p-16 overflow-hidden">
         <div className="absolute inset-0 pattern-dots opacity-10" style={{ backgroundSize: '24px 24px', backgroundImage: 'radial-gradient(circle, currentColor 1px, transparent 1px)' }} />
-        <div className="absolute -left-20 top-20 h-72 w-72 bg-primary/20 blur-[100px] rounded-full mix-blend-screen" />
-        <div className="absolute -right-20 bottom-20 h-72 w-72 bg-purple-500/20 blur-[100px] rounded-full mix-blend-screen" />
+        <div className="absolute -left-20 top-20 h-72 w-72 bg-primary/20 blur-[100px] rounded-full mix-blend-screen animate-pulse" style={{ animationDuration: '4s' }} />
+        <div className="absolute -right-20 bottom-20 h-72 w-72 bg-purple-500/20 blur-[100px] rounded-full mix-blend-screen animate-pulse" style={{ animationDuration: '6s' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-96 w-96 bg-indigo-500/10 blur-[120px] rounded-full" />
 
         <div className="relative z-10 space-y-8 animate-in fade-in slide-in-from-left-8 duration-700">
           <div className="flex items-center gap-3">
@@ -52,26 +202,28 @@ export function Login() {
             <h1 className="text-5xl font-extrabold tracking-tight text-foreground leading-[1.1]">
               The Quality Gate for <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-500">AI-Generated Code.</span>
             </h1>
-            <p className="text-xl text-muted-foreground leading-relaxed">
-              Elevate your codebase. Our deterministic and generative multi-agent platform reviews PRs natively, tracking architectural degradation effortlessly.
+            <p className="text-lg text-muted-foreground leading-relaxed">
+              Watch our engine detect vulnerabilities in real-time.
             </p>
           </div>
 
-          <div className="flex flex-col gap-4 pt-8">
-             <div className="flex items-center gap-3 bg-card/40 backdrop-blur-sm border border-border/50 p-4 rounded-xl">
-               <ShieldCheck className="h-6 w-6 text-green-500" />
-               <div className="flex flex-col">
-                 <span className="font-semibold text-sm">Deterministic Security</span>
-                 <span className="text-muted-foreground text-xs">CWE and OWASP compliant flaw detection</span>
-               </div>
-             </div>
-             <div className="flex items-center gap-3 bg-card/40 backdrop-blur-sm border border-border/50 p-4 rounded-xl">
-               <Zap className="h-6 w-6 text-yellow-500" />
-               <div className="flex flex-col">
-                 <span className="font-semibold text-sm">Real-time Performance Analysis</span>
-                 <span className="text-muted-foreground text-xs">Instantly detects O(n²) bottlenecks</span>
-               </div>
-             </div>
+          {/* Live typewriter demo replaces the static feature cards */}
+          <TypewriterDemo />
+
+          {/* Stats row */}
+          <div className="flex gap-6 pt-2">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <ShieldCheck className="h-4 w-4 text-green-500" />
+              <span><strong className="text-foreground">8</strong> CWEs detected</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Zap className="h-4 w-4 text-yellow-500" />
+              <span><strong className="text-foreground">&lt;2s</strong> analysis time</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Activity className="h-4 w-4 text-primary" />
+              <span><strong className="text-foreground">0.88</strong> confidence</span>
+            </div>
           </div>
         </div>
       </div>

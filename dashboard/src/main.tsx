@@ -19,6 +19,8 @@ import { Toaster } from './components/ui/Toaster'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { AdminPolicyManager } from './pages/AdminPolicyManager'
 import { AdminHealthDashboard } from './pages/AdminHealthDashboard'
+import { ResearchDashboard } from './pages/ResearchDashboard'
+import { ThemeProvider } from './contexts/ThemeContext'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -133,6 +135,14 @@ const router = createBrowserRouter([
               </ErrorBoundary>
             ),
           },
+          {
+            path: "research",
+            element: (
+              <ErrorBoundary label="Research Dashboard">
+                <ResearchDashboard />
+              </ErrorBoundary>
+            ),
+          },
         ]
       },
       // Rules Studio is accessible to all authenticated users
@@ -177,14 +187,16 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        {/* Bridge: translates window events → toast() calls */}
-        <EngineErrorBridge />
-        {/* Toast portal: renders in top-right corner above everything */}
-        <Toaster />
-        <RouterProvider router={router} />
-      </ToastProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          {/* Bridge: translates window events → toast() calls */}
+          <EngineErrorBridge />
+          {/* Toast portal: renders in top-right corner above everything */}
+          <Toaster />
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   </React.StrictMode>,
 )

@@ -1,0 +1,21 @@
+line-length = 100
+target-version = "py310"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "ARG", # flake8-unused-arguments
+    "PL",  # pylint
+]
+ignore = [
+    "PLR", # Design related pylint codes
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"

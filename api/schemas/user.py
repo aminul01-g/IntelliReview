@@ -23,3 +23,12 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+
+
+class TokenPayload(BaseModel):
+    """Token payload for JWT."""
+    sub: str
+    username: str
+    role: Optional[str] = None
+    team_id: Optional[int] = None
+    exp: datetime

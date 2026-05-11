@@ -1,12 +1,15 @@
 {
   "name": "intellireview-dashboard",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint --ext ts,tsx src/",
+    "lint:fix": "eslint --ext ts,tsx src/ --fix",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.0.5",
@@ -30,7 +33,6 @@
     "tailwind-merge": "^2.3.0"
   },
   "devDependencies": {
-    "@tailwindcss/typography": "^0.5.10",
     "@types/node": "^20.12.12",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
@@ -40,6 +42,7 @@
     "tailwindcss": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.2.2",
-    "vite": "^5.0.8"
+    "vite": "^5.0.8",
+    "vite-plugin-svg-routes": "^0.10.2"
   }
 }

@@ -1,64 +1,53 @@
+"""
+Authentication Routes for IntelliReview.
+Handles user registration, login, and token issuance.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
 
 from api.database import get_db
-from api.models.user import User
+from api.models.user import User, UserRole
 from api.schemas.user import UserCreate, UserResponse, Token
 from api.auth import (
     verify_password,
     get_password_hash,
     create_access_token,
-    get_current_user
+    get_current_user,
 )
 from config.settings import settings
 
 router = APIRouter()
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(user: UserCreate, db: Session = Depends(get_db)):
-    import re
-    # Check if string matches basic email structure
-    email_regex = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
-    if not re.match(email_regex, user.email):
+async def register(user_in: UserCreate, db: Session = Depends(get_db)):
+    """Register a new user."""
+    # Check if user already exists
+    existing_user = db.query(User).filter(
+        (User.username == user_in.username) | (User.email == user_in.email)
+    ).first()
+
+    if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid email format. Please provide a valid email address."
-        )
-        
-    # User requested strict checking for @gmail.com formatting
-    if not user.email.lower().endswith("@gmail.com"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Registration is currently restricted to properly formatted @gmail.com addresses."
+            detail="Username or email already registered"
         )
 
-    # Check if user exists
-    if db.query(User).filter(User.username == user.username).first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
-        )
-    
-    if db.query(User).filter(User.email == user.email).first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-    
-    # Create new user
-    db_user = User(
-        username=user.username,
-        email=user.email,
-        hashed_password=get_password_hash(user.password)
+    # Create user with hashed password
+    new_user = User(
+        username=user_in.username,
+        email=user_in.email,
+        hashed_password=get_password_hash(user_in.password),
+        role=UserRole.developer,
+        is_active=True
     )
-    
-    db.add(db_user)
+
+    db.add(new_user)
     db.commit()
-    db.refresh(db_user)
-    
-    return db_user
+    db.refresh(new_user)
+    return new_user
 
 @router.post("/login", response_model=Token)
 async def login(
@@ -66,29 +55,29 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
-    """Login and get access token."""
+    """Login and return JWT access token."""
     user = db.query(User).filter(User.username == form_data.username).first()
-    
+
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={"WWW-Authenticate": "form-data"},
         )
-    
+
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user account"
         )
-    
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.username},
         expires_delta=access_token_expires
     )
-    
-    # Set cookie for local dev (secure=False, samesite='lax') or prod (secure=True, samesite='none')
+
+    # Set cookie for local dev or prod
     cookie_kwargs = {
         "key": "auth_token",
         "value": access_token,
@@ -98,11 +87,11 @@ async def login(
     if settings.DEBUG or not settings.COOKIE_DOMAIN:
         cookie_kwargs["secure"] = False
         cookie_kwargs["samesite"] = "lax"
-        # Don't set domain for localhost
     else:
         cookie_kwargs["secure"] = True
         cookie_kwargs["samesite"] = "none"
         cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
+
     response.set_cookie(**cookie_kwargs)
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -125,6 +114,7 @@ async def logout(response: Response):
         cookie_kwargs["secure"] = True
         cookie_kwargs["samesite"] = "none"
         cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
+
     response.delete_cookie(**cookie_kwargs)
     return {"message": "Logged out successfully"}
 
@@ -139,7 +129,7 @@ async def refresh_token(
         data={"sub": current_user.username},
         expires_delta=access_token_expires
     )
-    
+
     cookie_kwargs = {
         "key": "auth_token",
         "value": access_token,
@@ -153,21 +143,17 @@ async def refresh_token(
         cookie_kwargs["secure"] = True
         cookie_kwargs["samesite"] = "none"
         cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
+
     response.set_cookie(**cookie_kwargs)
     return {"access_token": access_token, "token_type": "bearer"}
-
-# ==========================================
-# Enterprise SSO / OAuth Integrations (Phase 5)
-# ==========================================
 
 @router.get("/github/login")
 async def github_login():
     """Initiate GitHub OAuth SSO Login flow."""
-    # TODO: Implement OAuth2 Redirect using Authlib or Fastapi-SSO
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="GitHub Enterprise SSO is configured but requires client credentials setup in v2."
-    )
+    return {
+        "message": "SSO callback logic pending enterprise authentication service deployment.",
+        "redirect_url": "https://github.com/login/oauth/authorize?client_id=xxx&scope=user,repo"
+    }
 
 @router.get("/github/callback")
 async def github_callback(code: str):
@@ -177,5 +163,3 @@ async def github_callback(code: str):
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="SSO callback logic pending enterprise authentication service deployment."
     )
-
-

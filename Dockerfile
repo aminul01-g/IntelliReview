@@ -16,15 +16,11 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements - try both files for compatibility
-COPY requirements.txt . 2>/dev/null || true
+# Copy files needed for Python dependencies
+COPY requirements.txt pyproject.toml ./
 
 # Install Python dependencies - try requirements.txt first, then pyproject.toml
-RUN if [ -f requirements.txt ]; then \
-        pip install --no-cache-dir -r requirements.txt; \
-    elif [ -f pyproject.toml ]; then \
-        pip install --no-cache-dir .; \
-    fi
+RUN pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir .
 
 # Copy application code
 COPY . .

@@ -7,6 +7,11 @@ def setup_logging():
     Configures structured JSON logging for production.
     Ensures all logs include request IDs and are machine-readable.
     """
+    logging.basicConfig(
+        format="%(message)s",
+        level=logging.INFO,
+    )
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -14,14 +19,8 @@ def setup_logging():
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.JSONRenderer()
         ],
-        wrapper_class=structlog.stdlib.LoggerFactory(),
+        logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
-    )
-
-    # Setup standard logging to route through structlog
-    logging.basicConfig(
-        format="%(message)s",
-        level=logging.INFO,
     )
 
     logger = structlog.get_logger()

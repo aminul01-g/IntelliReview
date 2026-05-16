@@ -194,6 +194,67 @@ The strategic vision for IntelliReview is divided into four distinct phases:
 
 ---
 
+## 📊 Observability Stack
+
+IntelliReview includes a production-grade observability suite:
+
+- **Prometheus Metrics**: Exposed at `/api/v1/metrics`
+  - `http_requests_total` - Request count by method/endpoint/status
+  - `http_request_duration_seconds` - Latency histogram
+  - `celery_tasks_total` - Background task status
+  - `llm_call_duration_seconds` - AI provider latency
+  - `analysis_queue_size` - Current queue depth
+
+- **Structured Logging**: JSON-formatted logs with request IDs
+  - Configured via `api/logging.py` using `structlog`
+  - Includes request_id, user_id, analysis_id for traceability
+
+- **Health Probes**:
+  - `/health/live` - Liveness probe (always 200)
+  - `/health/ready` - Readiness probe (checks DB + Redis)
+
+## 🔄 CI/CD Pipeline
+
+The project uses GitHub Actions for continuous integration and deployment:
+
+1. **Lint & Test**: Runs `ruff`, `mypy`, and `pytest` on every PR
+2. **Build & Push**: On merge to `main`, builds and pushes Docker images to GHCR:
+   - `ghcr.io/{owner}/intellireview/backend:latest`
+   - `ghcr.io/{owner}/intellireview/worker:latest`
+   - `ghcr.io/{owner}/intellireview/frontend:latest`
+
+See `.github/workflows/ci.yml` for full configuration.
+
+## 🚀 Production Deployment
+
+To deploy IntelliReview in production:
+
+1. **Configure Environment**:
+   ```bash
+   cp .env.example .env.prod
+   # Edit .env.prod with your secrets (DATABASE_PASSWORD, SECRET_KEY, etc.)
+   ```
+
+2. **Start Stack**:
+   ```bash
+   docker-compose -f docker-compose.prod.yml up --build
+   ```
+
+3. **Services**:
+   - **Backend**: `http://localhost:8000`
+   - **Frontend**: `http://localhost:80` (nginx)
+   - **PostgreSQL**: `localhost:5432`
+   - **Redis**: `localhost:6379`
+
+4. **Verify Health**:
+   ```bash
+   curl http://localhost:8000/health
+   curl http://localhost:8000/health/ready
+   curl http://localhost:8000/api/v1/metrics
+   ```
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions from the community! Please see our `CONTRIBUTING.md` file for guidelines on how to submit pull requests, report bugs, and suggest architectural enhancements.

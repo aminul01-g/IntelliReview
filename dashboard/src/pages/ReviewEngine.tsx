@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import * as Lucide from 'lucide-react'
+import { useWebSocket } from '@/hooks/useWebSocket'
+import { useAuth } from '@/contexts/AuthContext'
 
 const { FileCode, Play, AlertCircle, CheckCircle, Code, GitBranch } = Lucide as any
 import { useSubmitAnalysis, useAnalysisTaskStatus, useSubmitSnippetAnalysis, isDiffFormat, guessLanguage } from '@/hooks/useAnalysisTask'
@@ -128,6 +130,8 @@ const ReviewEngine = () => {
   // Dual-mode: snippet analysis (synchronous) vs diff review (async/polling)
   const [snippetResult, setSnippetResult] = useState<any>(null)
   const [snippetError, setSnippetError] = useState<string | null>(null)
+  const { token } = useAuth()
+  const { status: wsStatus, isConnected } = useWebSocket(activeTaskId, token)
 
   const submitDiffMutation = useSubmitAnalysis()
   const submitSnippetMutation = useSubmitSnippetAnalysis()
@@ -309,8 +313,26 @@ const ReviewEngine = () => {
               ) : (
                 <>
                   <div className="space-y-3">
-                    <div className="h-5 w-3/4 bg-muted rounded animate-pulse"></div>
-                    <div className="h-4 w-1/2 bg-muted/60 rounded animate-pulse"></div>
+                    {wsStatus ? (
+                      <div className="p-3 bg-primary/10 border border-primary/20 rounded-md space-y-2">
+                        <div className="flex justify-between items-center text-xs font-bold text-primary uppercase tracking-wider">
+                          <span>{wsStatus.stage}</span>
+                          <span>{wsStatus.percentage}%</span>
+                        </div>
+                        <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary transition-all duration-500 ease-out"
+                            style={{ width: `${wsStatus.percentage}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground italic">{wsStatus.message}</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="h-5 w-3/4 bg-muted rounded animate-pulse"></div>
+                        <div className="h-4 w-1/2 bg-muted/60 rounded animate-pulse"></div>
+                      </>
+                    )}
                   </div>
                   <div className="space-y-2 mt-4">
                     <div className="h-32 w-full bg-muted/40 rounded border border-border/50 animate-pulse"></div>

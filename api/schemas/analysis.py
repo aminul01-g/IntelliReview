@@ -1,6 +1,14 @@
 from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional, Dict
 from datetime import datetime
+from enum import Enum
+
+class AnalysisStatus(str, Enum):
+    """Analysis status enumeration."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 class AnalysisRequest(BaseModel):
     """Request schema for code analysis."""

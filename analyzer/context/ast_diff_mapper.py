@@ -376,16 +376,24 @@ def extract_functions_from_snippet(
     return scopes
 
 
-def map_diff_to_ast_context(hunks: List[Dict], language: str) -> List[Dict]:
+def map_diff_to_ast_context(hunks: List[Dict], language: str, base_line: int = 1) -> List[Dict]:
     """
     Given parsed diff hunks containing 'added_lines' and 'context',
     combines them to extract the logical function boundaries that were modified.
 
+    Args:
+        hunks: List of diff hunk dicts with 'context', 'added_lines', 'removed_lines'.
+        language: Programming language for scope extraction.
+        base_line: The starting line number in the actual file where this hunk begins.
+                  Defaults to 1 for backward compatibility.
+
     Returns a list of context dicts with keys:
         ``hunk_index``, ``context_name``, ``context_type``, ``code``,
-        ``scope_path``, ``confidence``, ``extraction_method``
+        ``scope_path``, ``confidence``, ``extraction_method``, ``start_line``, ``end_line``
     """
     extracted_contexts = []
+    current_line = base_line
+
     for index, hunk in enumerate(hunks):
         # We merge context lines + added lines to give the parser maximum
         # chance of succeeding
@@ -405,8 +413,20 @@ def map_diff_to_ast_context(hunks: List[Dict], language: str) -> List[Dict]:
         if not snippet.strip():
             continue
 
+        # Calculate how many lines the reconstructed snippet has
+        snippet_line_count = len(reconstructed)
+
         scopes = extract_functions_from_snippet(snippet, language)
         for scope in scopes:
+            # Map relative line numbers from snippet to absolute file line numbers
+            scope_start = scope.get("start_line", 1)
+            scope_end = scope.get("end_line", scope_start)
+
+            # The scope's line numbers are relative to the reconstructed snippet (starting at 1)
+            # We need to add the base_line offset to get absolute file line numbers
+            absolute_start = base_line + scope_start - 1
+            absolute_end = base_line + scope_end - 1
+
             extracted_contexts.append({
                 "hunk_index": index,
                 "context_name": scope["name"],
@@ -415,6 +435,14 @@ def map_diff_to_ast_context(hunks: List[Dict], language: str) -> List[Dict]:
                 "scope_path": scope.get("scope_path", scope["name"]),
                 "confidence": scope.get("confidence", 0.3),
                 "extraction_method": scope.get("extraction_method", "fallback"),
+                "start_line": absolute_start,
+                "end_line": absolute_end,
+                # Keep relative for reference
+                "relative_start": scope_start,
+                "relative_end": scope_end,
             })
+
+        # Move base_line forward for next hunk (approximate - uses snippet length)
+        base_line += max(snippet_line_count, 1)
 
     return extracted_contexts

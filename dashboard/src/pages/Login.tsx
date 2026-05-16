@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Code, ArrowRight, ShieldCheck, Zap, Activity } from 'lucide-react'
+import { Code, ArrowRight, ShieldCheck, Zap, Activity, TabletSmartphone } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 
 // ── Typewriter Code Analysis Demo ──────────────────────────────────────
@@ -154,9 +154,11 @@ function TypewriterDemo() {
 
 export function Login() {
   const [isRegister, setIsRegister] = useState(false)
+  const [isDeviceFlow, setIsDeviceFlow] = useState(false)
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [deviceCode, setDeviceCode] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const { login, register } = useAuth() as any
@@ -167,7 +169,11 @@ export function Login() {
     setIsLoading(true)
     setError('')
     try {
-      if (isRegister) {
+      if (isDeviceFlow) {
+        // Device flow just needs the code; the actual auth happens on the device
+        await axiosClient.post('/api/oauth/device/verify', { code: deviceCode })
+        navigate('/')
+      } else if (isRegister) {
         await register(username, email, password)
         navigate('/')
       } else {
@@ -340,13 +346,16 @@ export function Login() {
 
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
-              {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
+              {isRegister ? 'Already have an account?' : (isDeviceFlow ? 'Need standard login?' : "Don't have an account?")}{' '}
               <button
                 type="button"
-                onClick={() => setIsRegister(!isRegister)}
+                onClick={() => {
+                  setIsRegister(!isRegister)
+                  setIsDeviceFlow(false)
+                }}
                 className="font-semibold text-primary hover:text-primary/90 hover:underline transition-all"
               >
-                {isRegister ? 'Sign in' : 'Sign up'}
+                {isRegister ? 'Sign in' : (isDeviceFlow ? 'Standard Login' : 'Sign up')}
               </button>
             </p>
           </div>

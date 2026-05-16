@@ -6,7 +6,9 @@ import tempfile
 from pylint.lint import Run
 from pylint.reporters.text import TextReporter
 
-class QualityDetector:
+from analyzer.detectors.base import Detector
+
+class QualityDetector(Detector):
     """Detect code quality issues and common bugs using static analysis."""
 
     def __init__(self):

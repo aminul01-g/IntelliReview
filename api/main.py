@@ -9,10 +9,20 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from api.middleware.resilience import LLMResilienceMiddleware
+from api.middleware.auth import AuthMiddleware
+from api.middleware.rate_limit import RateLimitMiddleware
+from api.middleware.logging_middleware import LoggingMiddleware
+from api.logging import setup_logging
 
-from config.settings import settings
-from api.routes import analysis, auth, metrics, feedback, webhooks, history, oauth_device, review_feedback, policies, queue_status, research
+# Initialize structured logging
+logger = setup_logging()
+
+# ... inside app setup ...
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(AuthMiddleware)
+app.add_middleware(RateLimitMiddleware, limiter=limiter)
+
+from api.routes import analysis, auth, metrics, feedback, webhooks, history, oauth_device, review_feedback, policies, queue_status, research, websocket
 from api.database import engine, Base
 
 # Ensure all models are loaded before create_all
@@ -80,6 +90,26 @@ app.include_router(review_feedback.router, prefix=f"{settings.API_PREFIX}/review
 app.include_router(policies.router, prefix=f"{settings.API_PREFIX}/policies", tags=["Policies"], dependencies=protected_dependencies)
 app.include_router(queue_status.router, prefix=f"{settings.API_PREFIX}", tags=["System"], dependencies=protected_dependencies)
 app.include_router(research.router, prefix=f"{settings.API_PREFIX}/research", tags=["Research"], dependencies=protected_dependencies)
+    app.include_router(websocket.router, tags=["Real-time Updates"])
+    app.include_router(metrics.router, prefix=f"{settings.API_PREFIX}/metrics", tags=["Observability"])
+
+
+@app.get("/health/live")
+async def liveness_probe():
+    """Liveness probe for Kubernetes/Docker."""
+    return {"status": "live"}
+
+@app.get("/health/ready")
+async def readiness_probe(request: Request):
+    """Readiness probe: Checks DB and Redis connectivity."""
+    try:
+        # Simple check for Redis connectivity as a proxy for readiness
+        from api.routes.queue_status import get_queue_status
+        # This internally tests Redis connection
+        await get_queue_status(current_user=None) # Mock user for probe
+        return {"status": "ready"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Service not ready: {str(e)}")
 
 @app.get("/health")
 @limiter.limit("60/minute")

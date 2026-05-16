@@ -9,6 +9,11 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
+class UserLogin(BaseModel):
+    """Schema for user login."""
+    email: EmailStr
+    password: str
+
 class UserResponse(UserBase):
     id: int
     is_active: bool

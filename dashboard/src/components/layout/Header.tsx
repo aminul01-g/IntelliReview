@@ -6,6 +6,7 @@ const Moon = (LucideAll as any).Moon || Settings
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useNavigate } from 'react-router-dom'
+import { QueueStatusIndicator } from '@/components/ui/QueueStatusIndicator'
 
 export function Header() {
   const { user, isAuthenticated, logout, isLoading } = useAuth()
@@ -73,6 +74,7 @@ export function Header() {
           <span className="flex h-2 w-2 rounded-full bg-green-500"></span>
           <span className="text-xs text-muted-foreground font-medium hidden md:inline-block">API Connected</span>
         </div>
+        <QueueStatusIndicator />
         <div className="h-8 w-px bg-border mx-1"></div>
         <button className="relative h-8 w-8 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80 outline-none">
           <Bell className="h-4 w-4 text-foreground" />

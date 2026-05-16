@@ -3,21 +3,26 @@ import re
 import bandit
 from bandit.core import manager as bandit_manager
 
-class SecurityScanner:
+from analyzer.detectors.base import Detector
+
+class SecurityScanner(Detector):
     """Scan code for security vulnerabilities."""
-    
+
     def scan(self, code: str, filename: str = "temp.py", language: str = "python") -> List[Dict]:
+        return self.detect(code, filename, language)
+
+    def detect(self, code: str, filename: str = "temp.py", language: str = "python", **kwargs) -> List[Dict]:
         """Scan code for security issues."""
         issues = []
-        
+
         if language == "python":
             issues.extend(self._scan_python(code, filename))
         elif language == "javascript":
             issues.extend(self._scan_javascript(code))
-        
+
         # Common security checks for all languages
         issues.extend(self._scan_common(code))
-        
+
         return issues
     
     # Python-specific dangerous patterns for in-memory regex scanning.

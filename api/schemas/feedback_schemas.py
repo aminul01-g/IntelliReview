@@ -319,3 +319,29 @@ class ReviewerFeedbackResponse(BaseModel):
         None, description="Improved autofix if 'request_better_fix' was the action"
     )
     message: str = Field(default="Feedback recorded successfully")
+
+
+class FeedbackSubmit(BaseModel):
+    """Schema for submitting user feedback on a review."""
+    analysis_id: int
+    finding_id: str
+    helpful: bool
+    comment: Optional[str] = None
+    suggested_fix_quality: Optional[Literal["good", "acceptable", "poor"]] = None
+
+
+class FeedbackStats(BaseModel):
+    """Statistics about feedback received."""
+    total_feedback: int
+    helpful_count: int
+    unhelpful_count: int
+    avg_fix_quality: Optional[float] = None
+
+
+class RuleStats(BaseModel):
+    """Statistics for a specific rule."""
+    rule_id: str
+    rule_name: str
+    times_triggered: int
+    false_positive_reports: int
+    accuracy_score: float

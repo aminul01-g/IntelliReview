@@ -12,7 +12,10 @@ dependencies = [
     "email-validator>=2.1.0",
     "sqlalchemy>=2.0.23",
     "psycopg2-binary>=2.9.9",
+    "pgvector>=0.3.0",
     "pymongo>=4.6.0",
+    "mutmut>=1.4.0",
+    "pytest-playwright>=0.4.0",
     "redis>=5.0.1",
     "celery>=5.3.6",
     "langchain>=0.1.15",
@@ -77,6 +80,11 @@ markers = [
     "integration: integration tests",
     "e2e: end-to-end tests",
 ]
+
+[tool.mutmut]
+paths = ["analyzer/feedback/severity_orchestrator.py", "analyzer/detectors/security_detector.py"]
+runner = "pytest"
+threshold = 80
 
 [tool.coverage.run]
 source = ["api", "analyzer", "ml_models"]

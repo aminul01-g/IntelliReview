@@ -13,7 +13,9 @@ import ast
 from typing import List, Dict
 
 
-class AIPatternDetector:
+from analyzer.detectors.base import Detector
+
+class AIPatternDetector(Detector):
     """Detect AI-generated code patterns and common AI coding mistakes."""
 
     def detect(self, code: str, filename: str = "unknown", language: str = "python") -> List[Dict]:

@@ -130,7 +130,7 @@ const ReviewEngine = () => {
   // Dual-mode: snippet analysis (synchronous) vs diff review (async/polling)
   const [snippetResult, setSnippetResult] = useState<any>(null)
   const [snippetError, setSnippetError] = useState<string | null>(null)
-  const { token } = useAuth()
+  const token = localStorage.getItem('auth_token') || null
   const { status: wsStatus, isConnected } = useWebSocket(activeTaskId, token)
 
   const submitDiffMutation = useSubmitAnalysis()

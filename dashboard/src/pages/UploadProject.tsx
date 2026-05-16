@@ -203,9 +203,9 @@ export function UploadProject() {
                  View Results in History
                </button>
              ) : (
-               <button 
+               <button
                  onClick={handleUpload}
-                 disabled={isUploading || uploadStatus === 'success'}
+                 disabled={isUploading || (uploadStatus as string) === 'success'}
                  className="h-10 px-6 py-2 text-sm font-medium rounded-md text-primary-foreground bg-primary hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm"
                >
                  {isUploading ? (

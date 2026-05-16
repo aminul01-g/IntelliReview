@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import * as Lucide from 'lucide-react';
-import { axiosClient } from '@/lib/api';
+import { api } from '@/lib/api';
 
 const { Activity } = Lucide as any;
 
@@ -21,7 +21,7 @@ export const QueueStatusIndicator = () => {
 
   const fetchStatus = async () => {
     try {
-      const response = await axiosClient.get('/api/queue_status/status');
+      const response = await api.get('/api/queue_status/status');
       setStatus(response.data);
     } catch (err) {
       console.error('Failed to fetch queue status:', err);

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Code, ArrowRight, ShieldCheck, Zap, Activity, TabletSmartphone } from 'lucide-react'
+import { Code, ArrowRight, ShieldCheck, Zap, Activity } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { api } from '@/lib/api'
 
 // ── Typewriter Code Analysis Demo ──────────────────────────────────────
 
@@ -171,7 +172,7 @@ export function Login() {
     try {
       if (isDeviceFlow) {
         // Device flow just needs the code; the actual auth happens on the device
-        await axiosClient.post('/api/oauth/device/verify', { code: deviceCode })
+        await api.post('/api/oauth/device/verify', { code: deviceCode })
         navigate('/')
       } else if (isRegister) {
         await register(username, email, password)

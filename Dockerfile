@@ -16,11 +16,15 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY requirements.txt .
+# Copy requirements - try both files for compatibility
+COPY requirements.txt . 2>/dev/null || true
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies - try requirements.txt first, then pyproject.toml
+RUN if [ -f requirements.txt ]; then \
+        pip install --no-cache-dir -r requirements.txt; \
+    elif [ -f pyproject.toml ]; then \
+        pip install --no-cache-dir .; \
+    fi
 
 # Copy application code
 COPY . .
@@ -31,12 +35,8 @@ COPY --from=frontend-builder /app/dashboard/dist /app/dashboard/dist
 # Create necessary directories
 RUN mkdir -p logs chroma_db
 
-# Verify frontend build exists and is not just the source index.html
-RUN if [ -d "/app/dashboard/dist" ]; then \
-        echo "Frontend build verified"; \
-    else \
-        echo "ERROR: Frontend build missing!" && exit 1; \
-    fi
+# Verify frontend build exists
+RUN ls -la /app/dashboard/dist/ || { echo "ERROR: Frontend dist missing!"; exit 1; }
 
 # Expose HF Spaces default port
 EXPOSE 7860

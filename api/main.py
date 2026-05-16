@@ -90,8 +90,7 @@ app.include_router(review_feedback.router, prefix=f"{settings.API_PREFIX}/review
 app.include_router(policies.router, prefix=f"{settings.API_PREFIX}/policies", tags=["Policies"], dependencies=protected_dependencies)
 app.include_router(queue_status.router, prefix=f"{settings.API_PREFIX}", tags=["System"], dependencies=protected_dependencies)
 app.include_router(research.router, prefix=f"{settings.API_PREFIX}/research", tags=["Research"], dependencies=protected_dependencies)
-    app.include_router(websocket.router, tags=["Real-time Updates"])
-    app.include_router(metrics.router, prefix=f"{settings.API_PREFIX}/metrics", tags=["Observability"])
+app.include_router(websocket.router, tags=["Real-time Updates"])
 
 
 @app.get("/health/live")

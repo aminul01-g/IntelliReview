@@ -13,11 +13,19 @@ class SuggestionGenerator:
     Uses a specialized LLM prompt to ensure suggestions are concise and correct.
     """
     def __init__(self):
-        self.llm = ChatGoogleGenerativeAI(
-            model=settings.LLM_MODEL,
-            google_api_key=settings.GOOGLE_API_KEY,
-            temperature=0.2
-        )
+        # Use HUGGINGFACE_MODEL as fallback since LLM_MODEL doesn't exist
+        model = getattr(settings, 'LLM_MODEL', settings.HUGGINGFACE_MODEL)
+        api_key = getattr(settings, 'GOOGLE_API_KEY', None)
+
+        if api_key:
+            self.llm = ChatGoogleGenerativeAI(
+                model=model,
+                google_api_key=api_key,
+                temperature=0.2
+            )
+        else:
+            # Fallback - will need HuggingFace API or mock
+            self.llm = None
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", (
                 "You are an elite software architect. Your goal is to provide precise, "

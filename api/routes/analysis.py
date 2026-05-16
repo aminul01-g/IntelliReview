@@ -50,7 +50,7 @@ security_scanner = SecurityScanner()
 quality_detector = QualityDetector()
 ai_pattern_detector = AIPatternDetector()
 project_context_builder = ProjectContextBuilder()
-suggestion_generator = SuggestionGenerator(provider="huggingface")
+suggestion_generator = SuggestionGenerator()
 
 
 @router.post("/analyze", response_model=AnalysisResponse)

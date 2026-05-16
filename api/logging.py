@@ -24,5 +24,5 @@ def setup_logging():
     )
 
     logger = structlog.get_logger()
-    logger.info("Structured logging initialized", environment=settings.ENV)
+    logger.info("Structured logging initialized", debug=settings.DEBUG)
     return logger

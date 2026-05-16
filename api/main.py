@@ -17,11 +17,6 @@ from api.logging import setup_logging
 # Initialize structured logging
 logger = setup_logging()
 
-# ... inside app setup ...
-app.add_middleware(LoggingMiddleware)
-app.add_middleware(AuthMiddleware)
-app.add_middleware(RateLimitMiddleware, limiter=limiter)
-
 from api.routes import analysis, auth, metrics, feedback, webhooks, history, oauth_device, review_feedback, policies, queue_status, research, websocket
 from api.database import engine, Base
 
@@ -72,6 +67,11 @@ app.add_middleware(
 
 # LLM Resilience middleware — translates upstream 429/503/504 into structured errors
 app.add_middleware(LLMResilienceMiddleware)
+
+# Custom middleware
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(AuthMiddleware)
+app.add_middleware(RateLimitMiddleware, limiter=limiter)
 
 from api.auth import get_current_user
 

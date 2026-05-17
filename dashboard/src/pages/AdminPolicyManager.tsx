@@ -33,7 +33,7 @@ export function AdminPolicyManager() {
   // Update global policies
   const updateMutation = useMutation({
     mutationFn: async (rules: any) => {
-      const { data } = await api.put('/policies/global/rules', { rules });
+      const { data } = await api.post('/policies/team/policy/update', { custom_rules: rules });
       return data;
     },
     onSuccess: () => {

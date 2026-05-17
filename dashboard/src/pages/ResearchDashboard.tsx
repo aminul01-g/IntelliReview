@@ -294,7 +294,9 @@ const PatternAnalysis = () => {
             {Object.entries(data?.raw_telemetry || {}).map(([key, value]: [string, any]) => (
               <div key={key} className="flex items-center justify-between p-2 rounded-md bg-muted/20 border border-border/40">
                 <span className="text-xs text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
-                <span className="text-xs font-mono font-bold text-foreground">{value}</span>
+                <span className="text-xs font-mono font-bold text-foreground">
+                  {typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)}
+                </span>
               </div>
             ))}
           </div>

@@ -11,7 +11,13 @@ export interface TelemetryPayload {
 export function useTelemetryFeedback() {
   return useMutation({
     mutationFn: async (payload: TelemetryPayload) => {
-      const response = await api.post('/telemetry/feedback', payload);
+      // Map action to accepted field (accept=true, reject=false)
+      const response = await api.post('/feedback/submit', {
+        suggestion_id: payload.rule_id,
+        accepted: payload.action === 'accept',
+        issue_type: payload.rule_id,
+        comment: ''
+      });
       return response.data;
     }
   });

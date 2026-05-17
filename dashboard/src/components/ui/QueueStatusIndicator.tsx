@@ -21,7 +21,7 @@ export const QueueStatusIndicator = () => {
 
   const fetchStatus = async () => {
     try {
-      const response = await api.get('/api/queue_status/status');
+      const response = await api.get('/queue_status/status');
       setStatus(response.data);
     } catch (err) {
       console.error('Failed to fetch queue status:', err);

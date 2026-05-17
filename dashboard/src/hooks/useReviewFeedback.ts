@@ -5,7 +5,7 @@ export function useReviewFeedback() {
   // For request better fix
   const requestBetterFix = useMutation({
     mutationFn: async (payload: any) => {
-      const { data } = await api.post('/review_feedback/request-better-fix', payload);
+      const { data } = await api.post('/review-feedback/request-better-fix', payload);
       return data;
     }
   });
@@ -13,7 +13,7 @@ export function useReviewFeedback() {
   // For ignore pattern
   const ignorePattern = useMutation({
     mutationFn: async (payload: any) => {
-      const { data } = await api.post('/review_feedback/ignore-pattern', payload);
+      const { data } = await api.post('/review-feedback/ignore-pattern', payload);
       return data;
     }
   });

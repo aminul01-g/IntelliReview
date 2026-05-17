@@ -30,7 +30,7 @@ export function AdminHealthDashboard() {
     setAggLoading(true);
     setAggResult(null);
     try {
-      const { data } = await api.post('/trigger-aggregation');
+      const { data } = await api.post('/history/trigger-aggregation');
       setAggResult(data);
     } catch (e: any) {
       setAggResult({ error: e.response?.data?.detail || e.message || 'Failed to trigger aggregation' });

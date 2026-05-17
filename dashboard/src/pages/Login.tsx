@@ -172,7 +172,7 @@ export function Login() {
     try {
       if (isDeviceFlow) {
         // Device flow just needs the code; the actual auth happens on the device
-        await api.post('/api/oauth/device/verify', { code: deviceCode })
+        await api.post('/oauth/device/verify', { code: deviceCode })
         navigate('/')
       } else if (isRegister) {
         await register(username, email, password)

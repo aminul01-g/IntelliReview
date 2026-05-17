@@ -42,6 +42,36 @@ async def get_pattern_analysis(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Pattern analysis failed: {str(e)}")
 
+@router.get("/threshold-sweep")
+async def get_threshold_sweep(
+    current_user: User = Depends(get_current_user)
+):
+    \"\"\"
+    Research endpoint to analyze how different sensitivity thresholds
+    affect the precision/recall of vulnerability detection.
+    \"\"\"
+    return {"message": "Threshold sweep data simulated", "data": {"precision": [0.9, 0.8, 0.7], "recall": [0.4, 0.6, 0.8]}}
+
+@router.get("/ablation-study")
+async def get_ablation_study(
+    current_user: User = Depends(get_current_user)
+):
+    \"\"\"
+    Research endpoint for ablation studies to determine which
+    model components contribute most to detection accuracy.
+    \"\"\"
+    return {"message": "Ablation study data simulated", "results": {"component_a": 0.12, "component_b": 0.45}}
+
+@router.get("/pipeline-architecture")
+async def get_pipeline_architecture(
+    current_user: User = Depends(get_current_user)
+):
+    \"\"\"
+    Research endpoint providing structural/architectural overview
+    of the current analysis pipeline.
+    \"\"\"
+    return {"architecture": "Modular pipeline", "stages": ["Ingestion", "Static Analysis", "LLM Review", "Telemetry Feedback"]}
+
 @router.get("/tech-debt-heatmap")
 async def get_tech_debt_heatmap(
     current_user: User = Depends(get_current_user),

@@ -56,20 +56,20 @@ async def get_threshold_sweep(
 async def get_ablation_study(
     current_user: User = Depends(get_current_user)
 ):
-    \"\"\"
+    """
     Research endpoint for ablation studies to determine which
     model components contribute most to detection accuracy.
-    \"\"\"
+    """
     return {"message": "Ablation study data simulated", "results": {"component_a": 0.12, "component_b": 0.45}}
 
 @router.get("/pipeline-architecture")
 async def get_pipeline_architecture(
     current_user: User = Depends(get_current_user)
 ):
-    \"\"\"
+    """
     Research endpoint providing structural/architectural overview
     of the current analysis pipeline.
-    \"\"\"
+    """
     return {"architecture": "Modular pipeline", "stages": ["Ingestion", "Static Analysis", "LLM Review", "Telemetry Feedback"]}
 
 @router.get("/tech-debt-heatmap")

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from datetime import datetime
 from typing import Optional
 
@@ -9,10 +9,24 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
+    @field_validator('password')
+    @classmethod
+    def validate_password_length(cls, v: str) -> str:
+        if len(v) > 72:
+            raise ValueError('Password must be 72 bytes or fewer')
+        return v
+
 class UserLogin(BaseModel):
     """Schema for user login."""
     email: EmailStr
     password: str
+
+    @field_validator('password')
+    @classmethod
+    def validate_password_length(cls, v: str) -> str:
+        if len(v) > 72:
+            raise ValueError('Password must be 72 bytes or fewer')
+        return v
 
 class UserResponse(UserBase):
     id: int

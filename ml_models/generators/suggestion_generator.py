@@ -56,20 +56,45 @@ class SuggestionGenerator:
         """
         Generates a code suggestion for a specific analysis finding.
         """
+        return await self.generate_suggestion_async(finding)
+
+    async def generate_suggestion_async(self, code: str, finding: Dict[str, Any], language: str = "python") -> Dict[str, Any]:
+        """
+        Async version for generating suggestions with code context.
+        """
         if not self.chain:
-            return "Suggestion generation not available - no LLM configured."
+            return {"suggestion": "Suggestion generation not available - no LLM configured."}
 
         try:
             suggestion = await self.chain.ainvoke({
-                "finding_name": finding.get("rule_name", "General Issue"),
+                "finding_name": finding.get("type", "Code Issue"),
                 "severity": finding.get("severity", "Medium"),
-                "file_path": finding.get("file_path", "unknown"),
-                "code_context": finding.get("context", "No context provided")
+                "file_path": "code snippet",
+                "code_context": code[:500] if code else "No context"
             })
-            return suggestion
+            return {"suggestion": suggestion}
         except Exception as e:
-            logger.error(f"Error generating suggestion for {finding.get('rule_name')}: {e}")
-            return "Could not generate a specific code suggestion. Please review the finding manually."
+            logger.error(f"Error generating suggestion: {e}")
+            return {"suggestion": "Could not generate suggestion."}
+
+    async def generate_general_review_async(self, code: str, language: str = "python") -> Dict[str, Any]:
+        """
+        Generate a general AI overview/review of the code.
+        """
+        if not self.chain:
+            return {"overview": "AI review not available - no LLM configured."}
+
+        try:
+            review_prompt = ChatPromptTemplate.from_messages([
+                ("system", "You are a senior code reviewer. Provide a brief overview of the code quality and potential issues."),
+                ("human", "Review this {language} code:\n{code}")
+            ])
+            review_chain = review_prompt | self.llm | StrOutputParser()
+            overview = await review_chain.ainvoke({"language": language, "code": code[:1000]})
+            return {"overview": overview}
+        except Exception as e:
+            logger.error(f"Error generating review: {e}")
+            return {"overview": "Could not generate review."}
 
     async def generate_batch_suggestions(self, findings: List[Dict[str, Any]]) -> List[str]:
         """

@@ -20,6 +20,7 @@ import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { AdminPolicyManager } from './pages/AdminPolicyManager'
 import { AdminHealthDashboard } from './pages/AdminHealthDashboard'
 import { ResearchDashboard } from './pages/ResearchDashboard'
+import { ProjectList } from './pages/ProjectList'
 import { ThemeProvider } from './contexts/ThemeContext'
 import './index.css'
 
@@ -100,6 +101,14 @@ const router = createBrowserRouter([
             element: (
               <ErrorBoundary label="Analysis Engine">
                 <ReviewEngine />
+              </ErrorBoundary>
+            ),
+          },
+          {
+            path: "projects",
+            element: (
+              <ErrorBoundary label="Project List">
+                <ProjectList />
               </ErrorBoundary>
             ),
           },

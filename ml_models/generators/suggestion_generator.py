@@ -45,12 +45,20 @@ class SuggestionGenerator:
                 "Please provide a corrected version of the code snippet."
             ))
         ])
-        self.chain = self.prompt | self.llm | StrOutputParser()
+
+        # Only create chain if LLM is available
+        if self.llm:
+            self.chain = self.prompt | self.llm | StrOutputParser()
+        else:
+            self.chain = None
 
     async def generate_suggestion(self, finding: Dict[str, Any]) -> str:
         """
         Generates a code suggestion for a specific analysis finding.
         """
+        if not self.chain:
+            return "Suggestion generation not available - no LLM configured."
+
         try:
             suggestion = await self.chain.ainvoke({
                 "finding_name": finding.get("rule_name", "General Issue"),

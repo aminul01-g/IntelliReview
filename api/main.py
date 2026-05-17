@@ -12,6 +12,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from api.middleware.auth_middleware import AuthMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
 from api.middleware.logging_middleware import LoggingMiddleware
+from api.middleware.resilience import LLMResilienceMiddleware
 from api.logging import setup_logging
 from config.settings import settings
 

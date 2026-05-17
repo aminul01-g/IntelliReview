@@ -3,19 +3,8 @@ import { api } from '@/lib/api';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import type { AuthContextType } from '@/contexts/AuthContext';
-import * as LucideAll from 'lucide-react';
-import { X, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
-
-// Icons extracted via wildcard to handle lucide-react v0.562 bundler resolution
-const Shield      = (LucideAll as any).Shield      as React.FC<{ className?: string }>;
-const Users       = (LucideAll as any).Users       as React.FC<{ className?: string }>;
-const Globe       = (LucideAll as any).Globe       as React.FC<{ className?: string }>;
-const Pencil      = (LucideAll as any).Pencil      as React.FC<{ className?: string }>; // was Edit3
-const Save        = (LucideAll as any).Save        as React.FC<{ className?: string }>;
-const Lock        = (LucideAll as any).Lock        as React.FC<{ className?: string }>;
-const ChevronDown = (LucideAll as any).ChevronDown as React.FC<{ className?: string }>;
-const ChevronUp   = (LucideAll as any).ChevronUp   as React.FC<{ className?: string }>;
-const Info        = (LucideAll as any).Info        as React.FC<{ className?: string }>;
+// @ts-ignore – lucide-react v0.562 barrel exports resolve correctly at Vite runtime
+import { Shield, Users, Globe, Save, Lock, ChevronDown, ChevronUp, Info, X, RefreshCw, CheckCircle, AlertCircle, Pencil } from 'lucide-react';
 
 // ── Shared sub-components ──────────────────────────────────────────────────
 

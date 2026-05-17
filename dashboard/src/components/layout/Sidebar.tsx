@@ -1,10 +1,10 @@
 
 import React from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, History, FileCode, Code, Settings, UploadCloud, Activity, User, Shield } from 'lucide-react'
+// @ts-ignore – lucide-react v0.562 barrel exports resolve correctly at Vite runtime
+import { LayoutDashboard, History, FileCode, Code, Settings, UploadCloud, Activity, User, Shield, FolderOpen } from 'lucide-react'
 import * as LucideAll from 'lucide-react'
 const FlaskConical = (LucideAll as any).FlaskConical || Activity
-const FolderOpen   = (LucideAll as any).FolderOpen   as React.FC<{ className?: string }>
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 

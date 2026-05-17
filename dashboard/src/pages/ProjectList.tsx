@@ -1,17 +1,10 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+// @ts-ignore – lucide-react v0.562 barrel exports resolve correctly at Vite runtime
+import { Folder, Calendar, FileText, Trash2, UploadCloud, Clock, RefreshCw, AlertCircle, ChevronRight, FolderOpen, Search } from 'lucide-react';
+// @ts-ignore – useQueryClient exists in @tanstack/react-query v5
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
-import * as LucideAll from 'lucide-react';
-import { FileText, Clock, RefreshCw, AlertCircle, Search } from 'lucide-react';
-
-// Icons extracted via wildcard to handle lucide-react v0.562 bundler resolution
-const Folder       = (LucideAll as any).Folder       as React.FC<{ className?: string }>;
-const FolderOpen   = (LucideAll as any).FolderOpen   as React.FC<{ className?: string }>;
-const Calendar     = (LucideAll as any).Calendar     as React.FC<{ className?: string }>;
-const Trash2       = (LucideAll as any).Trash2       as React.FC<{ className?: string }>;
-const UploadCloud  = (LucideAll as any).UploadCloud  as React.FC<{ className?: string }>;
-const ChevronRight = (LucideAll as any).ChevronRight as React.FC<{ className?: string }>;
 
 interface Project {
   id: number;
@@ -37,6 +30,7 @@ function timeAgo(iso: string) {
 
 export function ProjectList() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
@@ -54,7 +48,7 @@ export function ProjectList() {
     },
     onSuccess: () => {
       setDeleteConfirmId(null);
-      refetch();
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: () => {
       setDeleteConfirmId(null);

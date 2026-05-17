@@ -46,10 +46,10 @@ async def get_pattern_analysis(
 async def get_threshold_sweep(
     current_user: User = Depends(get_current_user)
 ):
-    \"\"\"
+    """
     Research endpoint to analyze how different sensitivity thresholds
     affect the precision/recall of vulnerability detection.
-    \"\"\"
+    """
     return {"message": "Threshold sweep data simulated", "data": {"precision": [0.9, 0.8, 0.7], "recall": [0.4, 0.6, 0.8]}}
 
 @router.get("/ablation-study")

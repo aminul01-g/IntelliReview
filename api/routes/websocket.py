@@ -1,7 +1,6 @@
 import asyncio
 import logging
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, status
-from fastapi.dependencies import Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, status, Depends
 from api.auth import get_current_user
 from api.database import get_db
 from sqlalchemy.orm import Session

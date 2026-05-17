@@ -21,13 +21,26 @@ api.interceptors.response.use(
     const data: any = error.response?.data ?? {}
 
     // ── 1. 401 — session expired / not authenticated ─────────────────────────
-    // There is no /auth/refresh endpoint. On 401 we simply broadcast the
-    // unauthorized event so AuthContext can clear the user state and the
-    // ProtectedRoute can redirect to /login. We only do this once per request.
     if (status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
-      window.dispatchEvent(new Event('auth:unauthorized'))
-      return Promise.reject(error)
+
+      try {
+        // Attempt to silently refresh the token using the refresh endpoint
+        const { data: refreshData } = await api.post('/auth/refresh');
+
+        if (refreshData?.access_token) {
+          localStorage.setItem('auth_token', refreshData.access_token);
+          api.defaults.headers.common['Authorization'] = `Bearer ${refreshData.access_token}`;
+
+          // Retry the original request with the new token
+          originalRequest.headers['Authorization'] = `Bearer ${refreshData.access_token}`;
+          return api(originalRequest);
+        }
+      } catch (refreshError) {
+        // Refresh failed, session is truly dead
+        window.dispatchEvent(new Event('auth:unauthorized'));
+        return Promise.reject(refreshError);
+      }
     }
 
     // ── 2. LLM / Analysis Engine errors ─────────────────────────────────────

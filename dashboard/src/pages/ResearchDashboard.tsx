@@ -6,11 +6,11 @@ import {
 } from 'recharts'
 import * as RechartAll from 'recharts'
 const ReferenceLine = (RechartAll as any).ReferenceLine
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import * as LucideIcons from 'lucide-react'
 
-const { Activity, Shield, GitBranch, TrendingUp, Layers, Zap, Target, ArrowRight } = LucideIcons as any
+const { Activity, Shield, GitBranch, TrendingUp, Layers, Zap, Target, ArrowRight, Brain, Heatmap, Lightbulb, Send } = LucideIcons as any
 
 // ── Threshold Sweep Visualization ──────────────────────────────────────
 
@@ -255,7 +255,207 @@ const AblationStudyChart = () => {
   )
 }
 
-// ── Pipeline Architecture Flow ─────────────────────────────────────────
+// ── Pattern Analysis Visualization ──────────────────────────────────────
+
+const PatternAnalysis = () => {
+  const { data, isLoading } = useQuery({
+    queryKey: ['patternAnalysis'],
+    queryFn: async () => {
+      const res = await api.get('/research/pattern-analysis')
+      return res.data
+    },
+  })
+
+  if (isLoading) return null
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <Brain className="h-5 w-5 text-primary" />
+          <h3 className="text-lg font-semibold tracking-tight">Pattern Analysis & AI Rules</h3>
+        </div>
+        <div className="text-right">
+          <span className="text-xs font-mono bg-primary/10 text-primary px-2 py-1 rounded border border-primary/20">
+            Model: {data?.model_used || 'N/A'}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <div className="prose prose-invert max-w-none p-4 bg-muted/30 rounded-lg border border-border/50 text-sm leading-relaxed">
+            <div className="whitespace-pre-wrap text-foreground/90">{data?.deduced_rules}</div>
+          </div>
+        </div>
+        <div className="space-y-4">
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Telemetry Statistics</h4>
+          <div className="space-y-2">
+            {Object.entries(data?.raw_telemetry || {}).map(([key, value]: [string, any]) => (
+              <div key={key} className="flex items-center justify-between p-2 rounded-md bg-muted/20 border border-border/40">
+                <span className="text-xs text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
+                <span className="text-xs font-mono font-bold text-foreground">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Tech Debt Heatmap Visualization ──────────────────────────────────────
+
+const TechDebtHeatmap = () => {
+  const { data, isLoading } = useQuery({
+    queryKey: ['techDebtHeatmap'],
+    queryFn: async () => {
+      const res = await api.get('/research/tech-debt-heatmap')
+      return res.data
+    },
+  })
+
+  if (isLoading) return null
+
+  const heatmapEntries = Object.entries(data?.heatmap || {})
+  const totalDebt = data?.total_debt_score || 0
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <Heatmap className="h-5 w-5 text-primary" />
+          <h3 className="text-lg font-semibold tracking-tight">Technical Debt Heatmap</h3>
+        </div>
+        <div className="text-right">
+          <span className="text-xs text-muted-foreground">Total Project Debt Score: </span>
+          <span className="text-lg font-bold text-destructive">{totalDebt}</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {heatmapEntries.map(([filePath, score]: [string, any]) => {
+          const intensity = Math.min(1, score / 50) // Simple scaling
+          return (
+            <div
+              key={filePath}
+              className="p-3 rounded-lg border border-border/50 bg-muted/20 flex flex-col justify-between transition-all hover:border-primary/50"
+              style={{ borderLeft: `4px solid hsl(var(--destructive) / ${intensity * 100}%)` }}
+            >
+              <div className="text-xs font-mono text-foreground truncate mb-2" title={filePath}>
+                {filePath}
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground uppercase">Debt Weight</span>
+                <span className="text-sm font-bold text-foreground">{score}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {heatmapEntries.length === 0 && (
+        <div className="text-center py-10 text-muted-foreground text-sm">
+          No technical debt patterns identified yet.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Hypothesis Generator ───────────────────────────────────────────────
+
+const HypothesisGenerator = () => {
+  const [problem, setProblem] = useState('')
+  const [context, setContext] = useState('')
+
+  const hypothesisMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await api.post('/research/hypothesize-fix', payload)
+      return res.data
+    },
+  })
+
+  const { data, isLoading, isSuccess } = hypothesisMutation
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+      <div className="flex items-center gap-2 mb-6">
+        <Lightbulb className="h-5 w-5 text-primary" />
+        <h3 className="text-lg font-semibold tracking-tight">Architectural Hypothesis Generator</h3>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Problem Statement</label>
+            <textarea
+              className="w-full h-24 p-3 rounded-lg border border-border bg-muted/30 text-sm focus:ring-1 focus:ring-primary outline-none transition-all"
+              placeholder="e.g. The database layer is tightly coupled with the API controllers..."
+              value={problem}
+              onChange={e => setProblem(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Code Context (Optional)</label>
+            <textarea
+              className="w-full h-32 p-3 rounded-lg border border-border bg-muted/30 text-sm focus:ring-1 focus:ring-primary outline-none transition-all"
+              placeholder="Paste relevant snippets..."
+              value={context}
+              onChange={e => setContext(e.target.value)}
+            />
+          </div>
+          <button
+            onClick={() => {
+              if (!problem) return alert('Problem statement is required');
+              hypothesisMutation.mutate({ problem_statement: problem, context_code: context });
+            }}
+            className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 rounded-md font-medium text-sm transition-all"
+          >
+            <Send className="h-4 w-4" /> Generate Hypothesis
+          </button>
+        </div>
+
+        <div className="p-4 rounded-lg bg-muted/30 border border-border/50 min-h-[300px]">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full text-muted-foreground animate-pulse text-sm">
+              AI is hypothesizing a fix...
+            </div>
+          ) : isSuccess && data ? (
+            <div className="space-y-6">
+              <div>
+                <h4 className="text-sm font-bold text-foreground mb-2 flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-primary" /> Proposed Change
+                </h4>
+                <div className="text-sm text-foreground/90 leading-relaxed italic p-3 rounded bg-card border border-border shadow-sm">
+                  "{data.hypothesis}"
+                </div>
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-foreground mb-2">Suggested Implementation Steps</h4>
+                <div className="space-y-2">
+                  {data.suggested_steps.map((step: string, i: number) => (
+                    <div key={i} className="flex items-start gap-3 p-2 rounded bg-card border border-border/50 text-xs text-foreground/80">
+                      <div className="flex-shrink-0 w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[8px]">{i+1}</div>
+                      <span>{step}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-between items-center pt-4 border-t border-border/50">
+                <span className="text-[10px] text-muted-foreground">Confidence: {data.confidence * 100}%</span>
+                <span className="text-xs font-bold text-primary">High Probability</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm italic text-center p-6">
+              Submit a problem statement to generate an AI-powered architectural hypothesis.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const PipelineArchitecture = () => {
   const { data, isLoading } = useQuery({
@@ -337,16 +537,27 @@ const PipelineArchitecture = () => {
 export function ResearchDashboard() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Research Dashboard</h1>
-        <p className="text-muted-foreground text-lg mt-1">
-          Thesis-grade visualizations of the confidence routing, ablation study, and pipeline architecture.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Research Dashboard</h1>
+          <p className="text-muted-foreground text-lg mt-1">
+            Thesis-grade visualizations of the confidence routing, ablation study, and pipeline architecture.
+          </p>
+        </div>
       </div>
 
-      <PipelineArchitecture />
-      <ThresholdSweepChart />
-      <AblationStudyChart />
+      <div className="grid grid-cols-1 gap-8">
+        <PipelineArchitecture />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <ThresholdSweepChart />
+          <PatternAnalysis />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <AblationStudyChart />
+          <TechDebtHeatmap />
+        </div>
+        <HypothesisGenerator />
+      </div>
     </div>
   )
 }

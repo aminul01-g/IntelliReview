@@ -134,11 +134,11 @@ const ThresholdSweepChart = () => {
       <div className="grid grid-cols-3 gap-4 mt-6">
         <div className="p-3 bg-muted/30 rounded-lg border border-border/50 text-center">
           <p className="text-xs text-muted-foreground">Total Findings</p>
-          <p className="text-xl font-bold text-foreground">{data?.total_findings ?? 0}</p>
+          <p className="text-xl font-bold text-foreground">{String(data?.total_findings ?? 0)}</p>
         </div>
         <div className="p-3 bg-muted/30 rounded-lg border border-border/50 text-center">
           <p className="text-xs text-muted-foreground">Labeled Valid</p>
-          <p className="text-xl font-bold text-green-500">{data?.labeled_count ?? 0}</p>
+          <p className="text-xl font-bold text-green-500">{String(data?.labeled_count ?? 0)}</p>
         </div>
         <div className="p-3 bg-muted/30 rounded-lg border border-border/50 text-center">
           <p className="text-xs text-muted-foreground">Cost Savings at τ={selectedThreshold}</p>
@@ -227,14 +227,14 @@ const AblationStudyChart = () => {
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                  <span className="text-sm font-medium text-foreground">{item.component}</span>
+                  <span className="text-sm font-medium text-foreground">{String(item.component)}</span>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
                   <span className="text-muted-foreground">+{item.marginal_issues} issues</span>
                   {item.unique_cwes > 0 && (
                     <span className="text-primary font-medium">{item.unique_cwes} CWEs</span>
                   )}
-                  <span className="text-muted-foreground font-mono">conf: {item.avg_confidence}</span>
+                  <span className="text-muted-foreground font-mono">conf: {String(item.avg_confidence)}</span>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">{item.description}</p>
@@ -344,12 +344,12 @@ const TechDebtHeatmap = () => {
               className="p-3 rounded-lg border border-border/50 bg-muted/20 flex flex-col justify-between transition-all hover:border-primary/50"
               style={{ borderLeft: `4px solid hsl(var(--destructive) / ${intensity * 100}%)` }}
             >
-              <div className="text-xs font-mono text-foreground truncate mb-2" title={filePath}>
-                {filePath}
+              <div className="text-xs font-mono text-foreground truncate mb-2" title={String(filePath)}>
+                {String(filePath)}
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-muted-foreground uppercase">Debt Weight</span>
-                <span className="text-sm font-bold text-foreground">{score}</span>
+                <span className="text-sm font-bold text-foreground">{String(score)}</span>
               </div>
             </div>
           )
@@ -508,10 +508,10 @@ const PipelineArchitecture = () => {
                 <div className="flex justify-center mb-2">
                   <Icon className="h-5 w-5 text-foreground/70" />
                 </div>
-                <h4 className="text-xs font-bold text-foreground mb-1">{stage.name}</h4>
-                <p className="text-[10px] text-muted-foreground leading-tight">{stage.description}</p>
+                <h4 className="text-xs font-bold text-foreground mb-1">{String(stage.name)}</h4>
+                <p className="text-[10px] text-muted-foreground leading-tight">{String(stage.description)}</p>
                 {stage.threshold && (
-                  <div className="mt-2 text-[10px] font-mono text-primary">τ = {stage.threshold}</div>
+                  <div className="mt-2 text-[10px] font-mono text-primary">τ = {String(stage.threshold)}</div>
                 )}
                 {stage.detectors && (
                   <div className="mt-2 flex flex-wrap gap-0.5 justify-center">

@@ -1,16 +1,23 @@
 import React, { useState } from 'react';
 // @ts-ignore – lucide-react v0.562 barrel exports resolve correctly at Vite runtime
-import { Folder, Calendar, FileText, Trash2, UploadCloud, Clock, RefreshCw, AlertCircle, ChevronRight, FolderOpen, Search } from 'lucide-react';
+import { Folder, Calendar, FileText, Trash2, UploadCloud, Clock, RefreshCw, AlertCircle, ChevronRight, FolderOpen, Search, X, Eye, Edit3 } from 'lucide-react';
 // @ts-ignore – useQueryClient exists in @tanstack/react-query v5
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { useToast } from '@/contexts/ToastContext';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Project {
   id: number;
   name: string;
   plan_md: string;
   created_at: string;
+}
+
+interface ProjectPlanUpdate {
+  plan_md: string;
 }
 
 function formatDate(iso: string) {
@@ -31,8 +38,11 @@ function timeAgo(iso: string) {
 export function ProjectList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [editingProject, setEditingProject] = useState<{ id: number, plan_md: string } | null>(null);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['projects'],
@@ -52,6 +62,28 @@ export function ProjectList() {
     },
     onError: () => {
       setDeleteConfirmId(null);
+    },
+  });
+
+  const updatePlanMutation = useMutation({
+    mutationFn: async ({ id, plan_md }: { id: number; plan_md: string }) => {
+      await api.patch(`/analysis/projects/${id}`, { plan_md });
+    },
+    onSuccess: () => {
+      setEditingProject(null);
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      toast({
+        type: 'success',
+        title: 'Project Plan Updated',
+        message: 'The analysis plan has been saved successfully.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        type: 'error',
+        title: 'Update Failed',
+        message: error?.response?.data?.detail || 'An error occurred while saving the project plan.',
+      });
     },
   });
 
@@ -106,7 +138,8 @@ export function ProjectList() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <>
+      <div className="space-y-6 animate-in fade-in duration-500">
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
@@ -177,9 +210,14 @@ export function ProjectList() {
               </h3>
 
               {/* Plan preview */}
-              <p className="text-xs text-muted-foreground line-clamp-2 italic flex-1 mb-4 min-h-[2.5rem]">
-                {project.plan_md?.trim() || 'No analysis plan specified.'}
-              </p>
+              <div
+                className="cursor-pointer group/plan flex-1 mb-4 min-h-[2.5rem]"
+                onClick={() => setEditingProject({ id: project.id, plan_md: project.plan_md || '' })}
+              >
+                <p className="text-xs text-muted-foreground line-clamp-2 italic transition-colors group-hover/plan:text-primary">
+                  {project.plan_md?.trim() || 'No analysis plan specified.'}
+                </p>
+              </div>
 
               {/* Date row */}
               <div className="flex items-center gap-1 text-[11px] text-muted-foreground mb-4">
@@ -256,5 +294,85 @@ export function ProjectList() {
         </div>
       )}
     </div>
+
+    {/* ── Plan Edit Modal ── */}
+    {editingProject && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-card border border-border w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+          <div className="flex items-center justify-between p-4 border-b border-border">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <h2 className="font-bold text-foreground">Project Plan</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsPreviewMode(!isPreviewMode)}
+                className="flex items-center gap-1.5 px-2.5 h-8 rounded-md text-xs font-medium border border-border hover:bg-muted transition-colors"
+              >
+                {isPreviewMode ? <Edit3 className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                {isPreviewMode ? 'Edit' : 'Preview'}
+              </button>
+              <button
+                onClick={() => {
+                  setEditingProject(null);
+                  setIsPreviewMode(false);
+                }}
+                className="p-2 rounded-md hover:bg-muted transition-colors"
+              >
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 flex-1 overflow-hidden flex flex-col">
+            <label className="text-xs font-medium text-muted-foreground mb-2 block">
+              Analysis Plan (Markdown)
+            </label>
+            {isPreviewMode ? (
+              <div className="flex-1 w-full p-3 bg-muted/30 border border-border rounded-lg text-sm text-foreground overflow-y-auto prose prose-sm max-w-none font-sans">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {editingProject.plan_md}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <textarea
+                className="flex-1 w-full p-3 bg-muted/50 border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none font-mono"
+                value={editingProject?.plan_md || ''}
+                onChange={(e) => {
+                  if (editingProject) {
+                    setEditingProject({ ...editingProject, plan_md: e.target.value });
+                  }
+                }}
+                placeholder="Describe the analysis goals and constraints..."
+              />
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 p-4 border-t border-border bg-muted/20 rounded-b-2xl">
+            <button
+              onClick={() => {
+                setEditingProject(null);
+                setIsPreviewMode(false);
+              }}
+              className="px-4 h-9 rounded-md text-xs font-medium border border-border hover:bg-muted transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (editingProject) {
+                  updatePlanMutation.mutate({ id: editingProject.id, plan_md: editingProject.plan_md });
+                }
+              }}
+              disabled={updatePlanMutation.isPending}
+              className="px-4 h-9 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {updatePlanMutation.isPending ? <RefreshCw className="h-3 w-3 animate-spin" /> : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

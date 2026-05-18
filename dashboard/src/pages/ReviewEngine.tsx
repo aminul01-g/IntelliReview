@@ -17,7 +17,8 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any; taskId?: stri
   const handleAction = (action: 'accept' | 'reject') => {
     telemetry.mutate(
       {
-        rule_id: suggestion.rule_id || suggestion.id || suggestion.concept || 'UNKNOWN_RULE',
+        suggestion_id: suggestion.id || suggestion.rule_id || suggestion.concept || 'UNKNOWN_ID',
+        rule_type: suggestion.rule_id || suggestion.concept || 'UNKNOWN_RULE',
         action,
         task_id: taskId,
         line_number: suggestion.line || 0

@@ -6,7 +6,7 @@ from api.database import Base
 class Analysis(Base):
     """Analysis model."""
     __tablename__ = "analyses"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
@@ -20,11 +20,25 @@ class Analysis(Base):
     processing_time = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
-    
+
     # Versioning
     rule_version = Column(String(50), nullable=True)
     schema_version = Column(String(50), nullable=False, server_default="1.0.0")
-    
+
     # Relationships
     user = relationship("User", backref="analyses")
     project = relationship("Project", backref="analyses")
+
+class CustomRule(Base):
+    """Persisted custom rules for a user or project."""
+    __tablename__ = "custom_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
+    name = Column(String(255), nullable=False)
+    definition = Column(JSON, nullable=False) # The rule config object
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", backref="custom_rules")
+    project = relationship("Project", backref="custom_rules")

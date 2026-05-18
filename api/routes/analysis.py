@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from pydantic import BaseModel
 import hashlib
 from datetime import datetime
 import time
@@ -10,7 +11,8 @@ logger = logging.getLogger(__name__)
 
 from api.database import get_db
 from api.models.user import User
-from api.models.analysis import Analysis
+from api.models.analysis import Analysis, CustomRule
+
 from api.models.project import Project
 from api.schemas.analysis import AnalysisRequest, AnalysisResponse, Issue, Metrics
 from api.auth import get_current_user
@@ -92,7 +94,7 @@ async def analyze_code(
         language=request.language,
         code_hash=code_hash,
         original_code=request.code,
-        status="pending",
+        status="PENDING",
         schema_version=schema_version,
         rule_version=rule_version
     )
@@ -260,7 +262,7 @@ async def analyze_code(
             "cognitive_complexity": metrics_data.get("cognitive_complexity")
         }
 
-        analysis.status = "completed"
+        analysis.status = "SUCCESS"
         analysis.completed_at = datetime.utcnow()
         analysis.issues = enhanced_issues
         analysis.metrics = metrics_dict
@@ -282,9 +284,9 @@ async def analyze_code(
     
     except Exception as e:
         logger.exception(f"Analysis failed: {str(e)}")
-        analysis.status = "failed"
+        analysis.status = "FAILURE"
         db.commit()
-        
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Analysis failed: {str(e)}"
@@ -345,7 +347,7 @@ async def get_projects_history(
     projects = db.query(Project).filter(
         Project.user_id == current_user.id
     ).order_by(Project.created_at.desc()).limit(limit).all()
-    
+
     return [
         {
             "id": p.id,
@@ -354,6 +356,63 @@ async def get_projects_history(
             "created_at": p.created_at
         } for p in projects
     ]
+
+@router.delete("/projects/{project_id}")
+async def delete_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a project and its associated metadata."""
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.user_id == current_user.id
+    ).first()
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found or you do not have permission to delete it"
+        )
+
+    db.delete(project)
+    db.commit()
+
+    return {"message": f"Project {project.name} deleted successfully"}
+
+class ProjectUpdateRequest(BaseModel):
+    plan_md: Optional[str] = None
+
+@router.patch("/projects/{project_id}")
+async def update_project_plan(
+    project_id: int,
+    request: ProjectUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update the project analysis plan."""
+    project = db.query(Project).filter(
+        Project.id == project_id,
+        Project.user_id == current_user.id
+    ).first()
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found or you do not have permission to modify it"
+        )
+
+    if request.plan_md is not None:
+        project.plan_md = request.plan_md
+        db.commit()
+        db.refresh(project)
+
+    return {
+        "id": project.id,
+        "name": project.name,
+        "plan_md": project.plan_md,
+        "created_at": project.created_at
+    }
 
 @router.get("/history/{analysis_id}", response_model=AnalysisResponse)
 async def get_analysis_result(
@@ -690,26 +749,57 @@ class CustomRulesRequest(BaseModel):
     rules: Optional[List[dict]] = None  # List of rule definitions
     rules_yaml: Optional[str] = None    # Raw YAML string from custom rules editor
 
+class CustomRuleSaveRequest(BaseModel):
+    name: str
+    definition: dict
+    project_id: Optional[int] = None
+
+@router.post("/custom-rules/save")
+async def save_custom_rule(
+    request: CustomRuleSaveRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Persist a custom rule to the database."""
+    new_rule = CustomRule(
+        user_id=current_user.id,
+        project_id=request.project_id,
+        name=request.name,
+        definition=request.definition
+    )
+    db.add(new_rule)
+    db.commit()
+    db.refresh(new_rule)
+    return {"id": new_rule.id, "message": "Rule saved successfully"}
+
 @router.post("/custom-rules")
 async def run_custom_rules(
     request: CustomRulesRequest,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """Evaluate custom YAML-style rules against code.
 
     Accepts a list of rule definitions and evaluates them against the
     provided code. Useful for enforcing team-specific conventions.
     """
-    if request.rules_yaml:
-        import yaml
-        from fastapi import HTTPException, status
-        try:
-            data = yaml.safe_load(request.rules_yaml) or {}
-            parsed_rules = data.get("rules", []) if isinstance(data, dict) else data
-        except Exception as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid YAML format: {str(e)}")
+    # If no rules provided in request, try loading saved rules for the user/project
+    parsed_rules = []
+    if request.rules or request.rules_yaml:
+        if request.rules_yaml:
+            import yaml
+            from fastapi import HTTPException, status
+            try:
+                data = yaml.safe_load(request.rules_yaml) or {}
+                parsed_rules = data.get("rules", []) if isinstance(data, dict) else data
+            except Exception as e:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid YAML format: {str(e)}")
+        else:
+            parsed_rules = request.rules or []
     else:
-        parsed_rules = request.rules or []
+        # Load from DB: get all user's custom rules
+        db_rules = db.query(CustomRule).filter(CustomRule.user_id == current_user.id).all()
+        parsed_rules = [r.definition for r in db_rules]
 
     engine = CustomRuleEngine(rules=parsed_rules)
     issues = engine.evaluate(request.code, request.filename, request.language)

@@ -26,7 +26,7 @@ const ThresholdSweepChart = () => {
   const [selectedThreshold, setSelectedThreshold] = useState(0.85)
 
   const selectedPoint = useMemo(() => {
-    if (!data?.sweep_data) return null
+    if (!data?.sweep_data || data.sweep_data.length === 0) return null
     return data.sweep_data.reduce((closest: any, point: any) =>
       Math.abs(point.threshold - selectedThreshold) < Math.abs(closest.threshold - selectedThreshold)
         ? point : closest
@@ -60,7 +60,7 @@ const ThresholdSweepChart = () => {
         <div className="text-right">
           <div className="text-xs text-muted-foreground">Optimal F1</div>
           <div className="text-lg font-bold text-primary">
-            τ = {data?.optimal_threshold ?? '—'} <span className="text-sm font-normal text-muted-foreground">(F1 = {data?.optimal_f1?.toFixed(4) ?? '—'})</span>
+            τ = {data?.optimal_threshold ?? '—'} <span className="text-sm font-normal text-muted-foreground">(F1 = {typeof data?.optimal_f1 === 'number' ? data.optimal_f1.toFixed(4) : (data?.optimal_f1 ?? '—')})</span>
           </div>
         </div>
       </div>
@@ -285,7 +285,7 @@ const PatternAnalysis = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <div className="prose prose-invert max-w-none p-4 bg-muted/30 rounded-lg border border-border/50 text-sm leading-relaxed">
-            <div className="whitespace-pre-wrap text-foreground/90">{data?.deduced_rules}</div>
+            <div className="whitespace-pre-wrap text-foreground/90">{typeof data?.deduced_rules === 'string' ? data.deduced_rules : JSON.stringify(data?.deduced_rules)}</div>
           </div>
         </div>
         <div className="space-y-4">
@@ -429,13 +429,13 @@ const HypothesisGenerator = () => {
                   <Zap className="h-4 w-4 text-primary" /> Proposed Change
                 </h4>
                 <div className="text-sm text-foreground/90 leading-relaxed italic p-3 rounded bg-card border border-border shadow-sm">
-                  "{data.hypothesis}"
+                  "{typeof data.hypothesis === 'string' ? data.hypothesis : JSON.stringify(data.hypothesis)}"
                 </div>
               </div>
               <div>
                 <h4 className="text-sm font-bold text-foreground mb-2">Suggested Implementation Steps</h4>
                 <div className="space-y-2">
-                  {data.suggested_steps.map((step: string, i: number) => (
+                  { (Array.isArray(data.suggested_steps) ? data.suggested_steps : []).map((step: string, i: number) => (
                     <div key={i} className="flex items-start gap-3 p-2 rounded bg-card border border-border/50 text-xs text-foreground/80">
                       <div className="flex-shrink-0 w-4 h-4 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-[8px]">{i+1}</div>
                       <span>{step}</span>

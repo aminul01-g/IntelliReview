@@ -64,8 +64,10 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         )
         username: str = payload.get("sub")
         if username is None:
+            print(f"DEBUG: Token decoded but 'sub' is missing. Payload: {payload}")
             raise credentials_exception
-    except JWTError:
+    except JWTError as e:
+        print(f"DEBUG: JWTError during decode: {str(e)} | token: {final_token[:10]}... | verify_expiry: {verify_expiry}")
         raise credentials_exception
 
     user = db.query(User).filter(User.username == username).first()

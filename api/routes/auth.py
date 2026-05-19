@@ -129,7 +129,11 @@ async def refresh_token(
         token = auth_header.split(" ")[1]
 
     # Use get_current_user but bypass expiration check to allow refreshing an expired token
-    current_user = await get_current_user(request=request, token=token, db=db, verify_expiry=False)
+    try:
+        current_user = await get_current_user(request=request, token=token, db=db, verify_expiry=False)
+    except HTTPException as e:
+        print(f"DEBUG: Refresh failed at get_current_user: {e.detail} | Token provided: {bool(token)}")
+        raise e
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(

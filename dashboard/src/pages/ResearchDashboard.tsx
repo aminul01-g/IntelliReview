@@ -72,11 +72,11 @@ const ThresholdSweepChart = () => {
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             {selectedPoint && (
               <>
-                <span>Precision: <strong className="text-foreground">{(selectedPoint.precision * 100).toFixed(1)}%</strong></span>
-                <span>Recall: <strong className="text-foreground">{(selectedPoint.recall * 100).toFixed(1)}%</strong></span>
-                <span>F1: <strong className="text-primary">{(selectedPoint.f1 * 100).toFixed(1)}%</strong></span>
-                <span>Conclusive: <strong className="text-green-500">{selectedPoint.conclusive_count}</strong></span>
-                <span>→ LLM: <strong className="text-orange-400">{selectedPoint.llm_count}</strong></span>
+                <span>Precision: <strong className="text-foreground">{typeof selectedPoint.precision === 'number' ? (selectedPoint.precision * 100).toFixed(1) : '0'}%</strong></span>
+                <span>Recall: <strong className="text-foreground">{typeof selectedPoint.recall === 'number' ? (selectedPoint.recall * 100).toFixed(1) : '0'}%</strong></span>
+                <span>F1: <strong className="text-primary">{typeof selectedPoint.f1 === 'number' ? (selectedPoint.f1 * 100).toFixed(1) : '0'}%</strong></span>
+                <span>Conclusive: <strong className="text-green-500">{selectedPoint.conclusive_count ?? 0}</strong></span>
+                <span>→ LLM: <strong className="text-orange-400">{selectedPoint.llm_count ?? 0}</strong></span>
               </>
             )}
           </div>
@@ -506,7 +506,7 @@ const PipelineArchitecture = () => {
             <React.Fragment key={stage.id}>
               <div className={`relative p-4 rounded-xl border-2 ${colorClass} min-w-[140px] max-w-[180px] text-center transition-all hover:scale-105 hover:shadow-md`}>
                 <div className="flex justify-center mb-2">
-                  <Icon className="h-5 w-5 text-foreground/70" />
+                  {Icon && <Icon className="h-5 w-5 text-foreground/70" />}
                 </div>
                 <h4 className="text-xs font-bold text-foreground mb-1">{String(stage.name)}</h4>
                 <p className="text-[10px] text-muted-foreground leading-tight">{String(stage.description)}</p>

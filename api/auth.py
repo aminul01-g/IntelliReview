@@ -35,18 +35,27 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+async def get_current_user(request: Optional[Request] = None, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     """
     Extract and validate the JWT token to return the current user.
-    Raises HTTPException if token is invalid or user is inactive.
+    Checks both Authorization header and auth_token cookie.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # Prioritize header token, fallback to cookie
+    final_token = token
+    if not final_token and request:
+        final_token = request.cookies.get("auth_token")
+
+    if not final_token:
+        raise credentials_exception
+
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(final_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception

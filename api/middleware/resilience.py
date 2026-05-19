@@ -30,8 +30,8 @@ class LLMResilienceMiddleware(BaseHTTPMiddleware):
         # Circuit Breaker State
         self.circuit_open = False
         self.failure_count = 0
-        self.failure_threshold = 5
-        self.recovery_timeout = 60  # seconds
+        self.failure_threshold = 15  # Increased from 5 to reduce sensitivity
+        self.recovery_timeout = 30   # Reduced from 60 for faster recovery
         self.last_failure_time = 0
 
     async def dispatch(self, request: Request, call_next) -> Response:

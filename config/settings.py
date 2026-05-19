@@ -57,6 +57,11 @@ class Settings(BaseSettings):
         env="COOKIE_DOMAIN",
         description="Domain for auth cookies (e.g., 'intellireview.com')"
     )
+    COOKIE_SAMESITE: str = Field(
+        "lax",
+        env="COOKIE_SAMESITE",
+        description="SameSite attribute for auth cookies: 'lax', 'strict', or 'none'"
+    )
     
     # Analysis
     MAX_FILE_SIZE: int = 10000  # lines

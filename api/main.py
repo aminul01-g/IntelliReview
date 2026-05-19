@@ -90,7 +90,7 @@ app.include_router(feedback.router, prefix=f"{settings.API_PREFIX}/feedback", ta
 app.include_router(history.router, prefix=f"{settings.API_PREFIX}/history", tags=["History"], dependencies=protected_dependencies)
 app.include_router(review_feedback.router, prefix=f"{settings.API_PREFIX}/review-feedback", tags=["Review Feedback"], dependencies=protected_dependencies)
 app.include_router(policies.router, prefix=f"{settings.API_PREFIX}/policies", tags=["Policies"], dependencies=protected_dependencies)
-app.include_router(queue_status.router, prefix=f"{settings.API_PREFIX}", tags=["System"], dependencies=protected_dependencies)
+app.include_router(queue_status.router, prefix=f"{settings.API_PREFIX}/queue_status", tags=["System"], dependencies=protected_dependencies)
 app.include_router(research.router, prefix=f"{settings.API_PREFIX}/research", tags=["Research"], dependencies=protected_dependencies)
 app.include_router(websocket.router, tags=["Real-time Updates"])
 

@@ -108,7 +108,6 @@ async def analyze_code(
         parser = parsers.get(request.language)
         ast = parser.parse(request.code, request.file_path or "temp") if parser else {}
         
-        # Parallelize independent detectors
         import asyncio
         from analyzer.rules.custom_rules import CustomRuleEngine
         

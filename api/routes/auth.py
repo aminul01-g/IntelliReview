@@ -49,6 +49,29 @@ async def register(user_in: UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
+def _get_cookie_kwargs(value: Optional[str] = None) -> dict:
+    """Helper to generate consistent cookie attributes based on environment."""
+    cookie_kwargs = {
+        "key": "auth_token",
+        "value": value,
+        "httponly": True,
+    }
+    if value:
+        cookie_kwargs["max_age"] = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
+    samesite = settings.COOKIE_SAMESITE.lower()
+    if settings.DEBUG or not settings.COOKIE_DOMAIN:
+        cookie_kwargs["secure"] = False
+        cookie_kwargs["samesite"] = "lax" if samesite == "lax" else samesite
+    else:
+        cookie_kwargs["secure"] = True
+        # Browsers require Secure=True for SameSite=None
+        cookie_kwargs["samesite"] = "none" if samesite == "none" else samesite
+        cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
+
+    return cookie_kwargs
+
+
 @router.post("/login", response_model=Token)
 async def login(
     response: Response,
@@ -77,22 +100,7 @@ async def login(
         expires_delta=access_token_expires
     )
 
-    # Set cookie for local dev or prod
-    cookie_kwargs = {
-        "key": "auth_token",
-        "value": access_token,
-        "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        "httponly": True,
-    }
-    if settings.DEBUG or not settings.COOKIE_DOMAIN:
-        cookie_kwargs["secure"] = False
-        cookie_kwargs["samesite"] = "lax"
-    else:
-        cookie_kwargs["secure"] = True
-        cookie_kwargs["samesite"] = "none"
-        cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
-
-    response.set_cookie(**cookie_kwargs)
+    response.set_cookie(**_get_cookie_kwargs(access_token))
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=UserResponse)
@@ -103,19 +111,7 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 @router.post("/logout")
 async def logout(response: Response):
     """Clear the auth cookie to end the session."""
-    cookie_kwargs = {
-        "key": "auth_token",
-        "httponly": True,
-    }
-    if settings.DEBUG or not settings.COOKIE_DOMAIN:
-        cookie_kwargs["secure"] = False
-        cookie_kwargs["samesite"] = "lax"
-    else:
-        cookie_kwargs["secure"] = True
-        cookie_kwargs["samesite"] = "none"
-        cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
-
-    response.delete_cookie(**cookie_kwargs)
+    response.delete_cookie(**_get_cookie_kwargs())
     return {"message": "Logged out successfully"}
 
 @router.post("/refresh", response_model=Token)
@@ -130,21 +126,7 @@ async def refresh_token(
         expires_delta=access_token_expires
     )
 
-    cookie_kwargs = {
-        "key": "auth_token",
-        "value": access_token,
-        "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        "httponly": True,
-    }
-    if settings.DEBUG or not settings.COOKIE_DOMAIN:
-        cookie_kwargs["secure"] = False
-        cookie_kwargs["samesite"] = "lax"
-    else:
-        cookie_kwargs["secure"] = True
-        cookie_kwargs["samesite"] = "none"
-        cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
-
-    response.set_cookie(**cookie_kwargs)
+    response.set_cookie(**_get_cookie_kwargs(access_token))
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/github/login")

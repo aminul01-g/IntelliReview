@@ -40,10 +40,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    // Fetch user on mount. The request interceptor in api.ts automatically
+    // attaches the token from localStorage to every outgoing request, so
+    // there is no race condition — the token is read at request-time.
     fetchUser();
 
-    // When api.ts broadcasts an unauthorized event (e.g. cookie expired),
-    // clear out the local user state. ProtectedRoute will then redirect to /login.
+    // When api.ts broadcasts an unauthorized event (e.g. token expired and
+    // refresh failed), clear out the local user state so ProtectedRoute
+    // redirects to /login.
     const handleUnauthorized = () => {
       setUser(null);
       setIsLoading(false);
@@ -64,15 +68,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     // The backend sets an HttpOnly cookie AND returns the token in the body.
-    // Store the token in localStorage as a fallback Authorization header source
-    // for environments where cross-origin cookies may be blocked (dev mismatches).
+    // Store the token in localStorage — the request interceptor in api.ts
+    // reads it on every request, so no need to set axios defaults here.
     if (data?.access_token) {
       localStorage.setItem('auth_token', data.access_token);
-      // Attach it immediately to the axios instance default headers
-      api.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`;
     }
 
-    // Cookie is now set (and/or token attached to headers); fetch user to populate context
+    // Token is now stored; fetch user to populate context
     await fetchUser();
   };
 
@@ -86,21 +88,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       await api.post('/auth/logout');
     } finally {
-      // Clear the stored token and axios default header
+      // Clear the stored token so the request interceptor stops attaching it
       localStorage.removeItem('auth_token');
-      delete api.defaults.headers.common['Authorization'];
       setUser(null);
     }
   };
-
-  // On startup, restore Authorization header from localStorage if a session token exists.
-  // This handles the case where cookies are blocked but the token was previously stored.
-  useEffect(() => {
-    const stored = localStorage.getItem('auth_token');
-    if (stored) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${stored}`;
-    }
-  }, []);
 
   return (
     <AuthContext.Provider value={{

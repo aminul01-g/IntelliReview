@@ -50,31 +50,50 @@ async def register(user_in: UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
-def _get_cookie_kwargs(value: Optional[str] = None) -> dict:
-    """Helper to generate consistent cookie attributes based on environment."""
-    cookie_kwargs = {
+def _get_cookie_kwargs(value: Optional[str] = None, request: Optional[Request] = None) -> dict:
+    """Helper to generate consistent cookie attributes based on environment.
+    
+    Auto-detects HTTPS from the request to set Secure flag correctly,
+    which is critical on platforms like Hugging Face Spaces where the app
+    runs behind an HTTPS proxy even with DEBUG=True.
+    """
+    # Detect if we're running behind HTTPS (e.g., HF Spaces proxy)
+    is_https = False
+    if request:
+        is_https = (
+            request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto") == "https"
+        )
+
+    cookie_kwargs: dict = {
         "key": "auth_token",
-        "value": value,
         "httponly": True,
+        "path": "/",
     }
+
+    if value is not None:
+        cookie_kwargs["value"] = value
     if value:
         cookie_kwargs["max_age"] = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
-    samesite = settings.COOKIE_SAMESITE.lower()
-    if settings.DEBUG or not settings.COOKIE_DOMAIN:
-        cookie_kwargs["secure"] = False
-        cookie_kwargs["samesite"] = "lax" if samesite == "lax" else samesite
-    else:
+    if is_https or (settings.COOKIE_DOMAIN and not settings.DEBUG):
+        # HTTPS environment (production or HF Spaces): browsers require
+        # Secure=True for SameSite=None cookies to be sent
         cookie_kwargs["secure"] = True
-        # Browsers require Secure=True for SameSite=None
-        cookie_kwargs["samesite"] = "none" if samesite == "none" else samesite
-        cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
+        cookie_kwargs["samesite"] = "none"
+        if settings.COOKIE_DOMAIN:
+            cookie_kwargs["domain"] = settings.COOKIE_DOMAIN
+    else:
+        # Local HTTP development
+        cookie_kwargs["secure"] = False
+        cookie_kwargs["samesite"] = "lax"
 
     return cookie_kwargs
 
 
 @router.post("/login", response_model=Token)
 async def login(
+    request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
@@ -101,7 +120,7 @@ async def login(
         expires_delta=access_token_expires
     )
 
-    response.set_cookie(**_get_cookie_kwargs(access_token))
+    response.set_cookie(**_get_cookie_kwargs(access_token, request=request))
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=UserResponse)
@@ -110,9 +129,9 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
     """Clear the auth cookie to end the session."""
-    response.delete_cookie(**_get_cookie_kwargs())
+    response.delete_cookie(**_get_cookie_kwargs(request=request))
     return {"message": "Logged out successfully"}
 
 @router.post("/refresh", response_model=Token)
@@ -129,11 +148,7 @@ async def refresh_token(
         token = auth_header.split(" ")[1]
 
     # Use get_current_user but bypass expiration check to allow refreshing an expired token
-    try:
-        current_user = await get_current_user(request=request, token=token, db=db, verify_expiry=False)
-    except HTTPException as e:
-        print(f"DEBUG: Refresh failed at get_current_user: {e.detail} | Token provided: {bool(token)}")
-        raise e
+    current_user = await get_current_user(request=request, token=token, db=db, verify_expiry=False)
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -141,7 +156,7 @@ async def refresh_token(
         expires_delta=access_token_expires
     )
 
-    response.set_cookie(**_get_cookie_kwargs(access_token))
+    response.set_cookie(**_get_cookie_kwargs(access_token, request=request))
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/github/login")

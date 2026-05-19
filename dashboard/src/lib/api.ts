@@ -10,6 +10,18 @@ export const api = axios.create({
   withCredentials: true, // Required for HttpOnly cookies
 })
 
+// ── Request interceptor ────────────────────────────────────────────────────────
+// Always attach the token from localStorage to every outgoing request.
+// This is essential because axios defaults.headers are lost on page reload,
+// and HttpOnly cookies may not be sent on certain cross-origin/HTTPS setups.
+api.interceptors.request.use((config: any) => {
+  const token = localStorage.getItem('auth_token')
+  if (token && !config.headers['Authorization']) {
+    config.headers['Authorization'] = `Bearer ${token}`
+  }
+  return config
+})
+
 // ── Response interceptor ───────────────────────────────────────────────────────
 
 api.interceptors.response.use(
@@ -24,25 +36,31 @@ api.interceptors.response.use(
     if (status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
 
+      // If there's no token at all, the user never logged in — skip refresh
+      const token = localStorage.getItem('auth_token')
+      if (!token) {
+        window.dispatchEvent(new Event('auth:unauthorized'))
+        return Promise.reject(error)
+      }
+
       try {
-        // Attempt to silently refresh the token using the refresh endpoint
-        const token = localStorage.getItem('auth_token');
+        // Attempt to silently refresh using the expired token
         const { data: refreshData } = await api.post('/auth/refresh', {}, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
+          headers: { Authorization: `Bearer ${token}` }
+        })
 
         if (refreshData?.access_token) {
-          localStorage.setItem('auth_token', refreshData.access_token);
-          api.defaults.headers.common['Authorization'] = `Bearer ${refreshData.access_token}`;
+          localStorage.setItem('auth_token', refreshData.access_token)
 
           // Retry the original request with the new token
-          originalRequest.headers['Authorization'] = `Bearer ${refreshData.access_token}`;
-          return api(originalRequest);
+          originalRequest.headers['Authorization'] = `Bearer ${refreshData.access_token}`
+          return api(originalRequest)
         }
       } catch (refreshError) {
-        // Refresh failed, session is truly dead
-        window.dispatchEvent(new Event('auth:unauthorized'));
-        return Promise.reject(refreshError);
+        // Refresh failed — session is truly dead, clear stale token
+        localStorage.removeItem('auth_token')
+        window.dispatchEvent(new Event('auth:unauthorized'))
+        return Promise.reject(refreshError)
       }
     }
 

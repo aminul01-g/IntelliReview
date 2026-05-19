@@ -26,7 +26,10 @@ api.interceptors.response.use(
 
       try {
         // Attempt to silently refresh the token using the refresh endpoint
-        const { data: refreshData } = await api.post('/auth/refresh');
+        const token = localStorage.getItem('auth_token');
+        const { data: refreshData } = await api.post('/auth/refresh', {}, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
 
         if (refreshData?.access_token) {
           localStorage.setItem('auth_token', refreshData.access_token);

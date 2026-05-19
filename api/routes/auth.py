@@ -118,9 +118,13 @@ async def logout(response: Response):
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
     response: Response,
-    current_user: User = Depends(get_current_user)
+    request: Request,
+    db: Session = Depends(get_db)
 ):
     """Silently refresh the JWT access token to prevent session expiry."""
+    # Use get_current_user but bypass expiration check to allow refreshing an expired token
+    current_user = await get_current_user(request=request, token=None, db=db, verify_expiry=False)
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": current_user.username},

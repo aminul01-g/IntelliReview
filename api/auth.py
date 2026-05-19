@@ -35,7 +35,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-async def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+async def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db), verify_expiry: bool = True) -> User:
     """
     Extract and validate the JWT token to return the current user.
     Checks both Authorization header and auth_token cookie.
@@ -55,7 +55,13 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         raise credentials_exception
 
     try:
-        payload = jwt.decode(final_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # If verify_expiry is False, we ignore the expiration check
+        payload = jwt.decode(
+            final_token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"verify_exp": verify_expiry}
+        )
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception

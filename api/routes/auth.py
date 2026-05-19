@@ -122,8 +122,14 @@ async def refresh_token(
     db: Session = Depends(get_db)
 ):
     """Silently refresh the JWT access token to prevent session expiry."""
+    # Manually extract token from Authorization header if present
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+
     # Use get_current_user but bypass expiration check to allow refreshing an expired token
-    current_user = await get_current_user(request=request, token=None, db=db, verify_expiry=False)
+    current_user = await get_current_user(request=request, token=token, db=db, verify_expiry=False)
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(

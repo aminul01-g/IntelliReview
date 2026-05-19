@@ -25,5 +25,17 @@
         "context_hash": 0
       }
     ]
+  },
+  "test_issue": {
+    "total": 1,
+    "accepted": 1,
+    "rejected": 0,
+    "examples": [
+      {
+        "suggestion_id": "test-id",
+        "accepted": true,
+        "context_hash": 0
+      }
+    ]
   }
 }

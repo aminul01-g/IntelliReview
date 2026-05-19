@@ -10,7 +10,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import * as LucideIcons from 'lucide-react'
 
-const { Activity, Shield, GitBranch, TrendingUp, Layers, Zap, Target, ArrowRight, Brain, Heatmap, Lightbulb, Send } = LucideIcons as any
+const { Activity, Shield, GitBranch, TrendingUp, Layers, Zap, Target, ArrowRight, Brain, Grid3X3, Lightbulb, Send } = LucideIcons as any
 
 // ── Threshold Sweep Visualization ──────────────────────────────────────
 
@@ -326,7 +326,7 @@ const TechDebtHeatmap = () => {
     <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
-          <Heatmap className="h-5 w-5 text-primary" />
+          <Grid3X3 className="h-5 w-5 text-primary" />
           <h3 className="text-lg font-semibold tracking-tight">Technical Debt Heatmap</h3>
         </div>
         <div className="text-right">

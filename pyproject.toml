@@ -43,6 +43,7 @@ dependencies = [
     "mcp>=1.0.0",
     "PyGithub>=2.1.1",
     "aiofiles>=23.2.1",
+    "sarif-om>=1.0.4",
 ]
 
 [project.optional-dependencies]

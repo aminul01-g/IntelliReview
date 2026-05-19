@@ -36,12 +36,29 @@ def _get_redis_client():
     )
 
 
-def _ping_redis(client) -> bool:
-    """Verify Redis is reachable before doing heavier queries."""
-    try:
-        return client.ping()
-    except Exception:
-        return False
+def _ping_redis(client) -> dict:
+    """Verify Redis is reachable before doing heavier queries.
+
+    Retries up to 3 times with exponential backoff (0.1s, 0.2s, 0.4s).
+    Returns {"ok": True} on success or {"ok": False, "reason": "..."} on failure.
+    """
+    import time as _time
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            if client.ping():
+                return {"ok": True}
+        except TimeoutError:
+            if attempt < max_retries - 1:
+                _time.sleep(0.1 * (2 ** attempt))
+                continue
+            return {"ok": False, "reason": "Redis slow to respond (timeout after retries)"}
+        except Exception as exc:
+            if attempt < max_retries - 1:
+                _time.sleep(0.1 * (2 ** attempt))
+                continue
+            return {"ok": False, "reason": f"Redis connection error: {exc}"}
+    return {"ok": False, "reason": "Redis unreachable after retries"}
 
 
 @router.get("/status")
@@ -63,9 +80,11 @@ async def get_queue_status(
         logger.exception("Failed to initialise Redis client")
         return _fallback_response(reason=f"Redis client init error: {exc}")
 
-    if not _ping_redis(redis_client):
-        logger.warning("Redis PING failed – broker may be down")
-        return _fallback_response(reason="Redis broker unreachable")
+    ping_result = _ping_redis(redis_client)
+    if not ping_result["ok"]:
+        reason = ping_result.get("reason", "Redis broker unreachable")
+        logger.warning("Redis health check: %s", reason)
+        return _fallback_response(reason=reason)
 
     # ── 2. Queue depths ──────────────────────────────────────────────────
     try:

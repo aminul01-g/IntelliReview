@@ -32,7 +32,12 @@ class LearningLoop:
         Record feedback and check if a configuration update should be suggested to the team.
         """
         # 1. Track in local pattern JSON
-        self.learner.track_feedback(suggestion_id, issue_type, accepted, context_hash=None)
+        self.learner.record_feedback(
+            suggestion_id=suggestion_id,
+            accepted=accepted,
+            issue_type=issue_type,
+            code_context="",
+        )
         
         # 2. Re-evaluate metrics for auto-suggestion
         stats = self.learner.patterns.get(issue_type, {})

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     HUGGINGFACE_API_KEY: Optional[str] = None
     HUGGINGFACE_MODEL: str = "Qwen/Qwen2.5-Coder-7B-Instruct"
 
+    # LLM Provider Selection (huggingface | groq | google)
+    LLM_PROVIDER: str = "huggingface"
+
     # Legacy/Removed
     # OPENAI_API_KEY: Optional[str] = None
     # ANTHROPIC_API_KEY: Optional[str] = None

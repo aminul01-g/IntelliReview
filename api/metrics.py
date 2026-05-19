@@ -33,10 +33,9 @@ ANALYSIS_QUEUE_SIZE = Gauge(
 
 router = APIRouter()
 
-@router.get("/metrics")
-async def metrics():
-    """Expose Prometheus metrics endpoint."""
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+# NOTE: The Prometheus /metrics endpoint is now served at the root level
+# in api/main.py (no auth required, standard scrape path).
+# This router only contains auth-protected business metrics.
 
 def track_http_request(method: str, endpoint: str, status: int, duration: float):
     """Utility to record HTTP request metrics."""

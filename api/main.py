@@ -1,8 +1,10 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 import os
+import uuid
+import logging
 from contextlib import asynccontextmanager
 import uvicorn
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -41,6 +43,7 @@ limiter = Limiter(key_func=get_remote_address)
 async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Starting IntelliReview API...")
+    _validate_spa_assets()
     yield
     # Shutdown
     print("👋 Shutting down IntelliReview API...")
@@ -57,6 +60,27 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+# ── Global Exception Handler ────────────────────────────────────────────────
+# Catches ALL unhandled exceptions to prevent stack trace leakage.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch-all handler for unhandled exceptions. Returns a structured JSON 500
+    with a unique request ID for correlation, without leaking internal details."""
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    _logger = logging.getLogger("api.global_error")
+    _logger.exception(
+        "Unhandled exception on %s %s [request_id=%s]",
+        request.method, request.url.path, request_id,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "request_id": request_id,
+        },
+        headers={"X-Request-ID": request_id},
+    )
 
 # CORS middleware
 app.add_middleware(
@@ -95,6 +119,15 @@ app.include_router(research.router, prefix=f"{settings.API_PREFIX}/research", ta
 app.include_router(websocket.router, tags=["Real-time Updates"])
 
 
+# ── Prometheus Metrics (public, root-level) ──────────────────────────────────
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Expose Prometheus metrics at /metrics (standard scrape path, no auth)."""
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+# ── Health Checks ────────────────────────────────────────────────────────────
 @app.get("/health/live")
 async def liveness_probe():
     """Liveness probe for Kubernetes/Docker."""
@@ -102,15 +135,21 @@ async def liveness_probe():
 
 @app.get("/health/ready")
 async def readiness_probe(request: Request):
-    """Readiness probe: Checks DB and Redis connectivity."""
+    """Readiness probe: Checks Redis connectivity."""
     try:
-        # Simple check for Redis connectivity as a proxy for readiness
-        from api.routes.queue_status import get_queue_status
-        # This internally tests Redis connection
-        await get_queue_status(current_user=None) # Mock user for probe
+        import redis
+        r = redis.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            db=settings.REDIS_DB,
+            socket_timeout=2.0,
+            socket_connect_timeout=2.0,
+        )
+        r.ping()
         return {"status": "ready"}
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Service not ready: {str(e)}")
+    except Exception:
+        # Redis unavailable is not necessarily fatal (SQLite mode)
+        return {"status": "ready", "redis": "unavailable"}
 
 @app.get("/health")
 @limiter.limit("60/minute")
@@ -118,7 +157,31 @@ async def health_check(request: Request):
     """Health check endpoint."""
     return {"status": "healthy"}
 
-# Serve Frontend SPA
+@app.get("/health/spa")
+async def spa_health():
+    """Verify frontend SPA assets are present and consistent."""
+    index_path = os.path.join("dashboard/dist", "index.html")
+    if not os.path.isfile(index_path):
+        return JSONResponse(
+            status_code=503,
+            content={"status": "missing", "detail": "index.html not found"},
+        )
+    
+    # Check that referenced JS assets actually exist on disk
+    missing = _find_missing_spa_assets(index_path)
+    if missing:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "stale",
+                "detail": "Referenced assets missing after rebuild",
+                "missing_assets": missing,
+            },
+        )
+    return {"status": "ok", "index": index_path}
+
+
+# ── Serve Frontend SPA ───────────────────────────────────────────────────────
 FRONTEND_DIST = "dashboard/dist"
 if os.path.exists(FRONTEND_DIST):
     print(f"✅ Frontend assets found at {FRONTEND_DIST}. Enabling SPA hosting.")
@@ -146,7 +209,11 @@ if os.path.exists(FRONTEND_DIST):
         if "." in full_path.split("/")[-1] and not full_path.endswith(".html"):
             raise HTTPException(status_code=404, detail="Static asset not found")
 
-        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+        # Serve index.html with no-cache so browsers always get the latest after rebuilds
+        return FileResponse(
+            os.path.join(FRONTEND_DIST, "index.html"),
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
 else:
     print(f"⚠️ Frontend assets NOT found at {FRONTEND_DIST}. Running in API-only mode.")
     @app.get("/")
@@ -159,6 +226,43 @@ else:
             "status": "running",
             "message": "Frontend not built. To view the UI, build the frontend first."
         }
+
+
+# ── SPA Asset Validation Helpers ─────────────────────────────────────────────
+def _find_missing_spa_assets(index_path: str) -> list[str]:
+    """Parse index.html for <script src="..."> and <link href="..."> tags
+    and verify each referenced file exists on disk."""
+    import re
+    missing = []
+    try:
+        with open(index_path, "r") as f:
+            html = f.read()
+        # Match src="/assets/..." and href="/assets/..."
+        refs = re.findall(r'(?:src|href)="(/assets/[^"]+)"', html)
+        for ref in refs:
+            # ref is like "/assets/index-BfVSQqAk.js"
+            disk_path = os.path.join("dashboard/dist", ref.lstrip("/"))
+            if not os.path.isfile(disk_path):
+                missing.append(ref)
+    except Exception:
+        pass
+    return missing
+
+
+def _validate_spa_assets():
+    """Startup check: warn loudly if SPA assets are stale."""
+    index_path = os.path.join("dashboard/dist", "index.html")
+    if not os.path.isfile(index_path):
+        return
+    missing = _find_missing_spa_assets(index_path)
+    if missing:
+        _logger = logging.getLogger("api.spa")
+        _logger.error(
+            "SPA ASSET MISMATCH: index.html references assets that don't exist on disk: %s. "
+            "This usually means the frontend was rebuilt but the server is serving a stale index.html.",
+            missing,
+        )
+
 
 if __name__ == "__main__":
     uvicorn.run(

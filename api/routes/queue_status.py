@@ -26,10 +26,8 @@ CELERY_INSPECTOR_TIMEOUT = 5.0      # seconds – inspector RPC timeout
 def _get_redis_client():
     """Create a Redis client with explicit timeouts to prevent hanging."""
     import redis
-    return redis.Redis(
-        host=settings.REDIS_HOST,
-        port=settings.REDIS_PORT,
-        db=settings.REDIS_DB,
+    return redis.from_url(
+        settings.redis_url,
         socket_timeout=REDIS_SOCKET_TIMEOUT,
         socket_connect_timeout=REDIS_CONNECT_TIMEOUT,
         decode_responses=True,

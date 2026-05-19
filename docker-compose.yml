@@ -85,8 +85,11 @@ services:
       - POSTGRES_PORT=5432
       - POSTGRES_DB=intellireview_db
       - MONGODB_URL=mongodb://admin:${MONGO_PASSWORD:-password}@mongodb:27017
+      - REDIS_URL=redis://redis:6379/0
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
       - HUGGINGFACE_MODEL=${HUGGINGFACE_MODEL:-Qwen/Qwen2.5-Coder-7B-Instruct}
       # - OPENAI_API_KEY=${OPENAI_API_KEY}

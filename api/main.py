@@ -162,10 +162,8 @@ async def readiness_probe(request: Request):
     """Readiness probe: Checks Redis connectivity."""
     try:
         import redis
-        r = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            db=settings.REDIS_DB,
+        r = redis.from_url(
+            settings.redis_url,
             socket_timeout=2.0,
             socket_connect_timeout=2.0,
         )
@@ -293,19 +291,17 @@ def _check_redis_on_startup():
     _logger = logging.getLogger("api.startup")
     try:
         import redis
-        r = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            db=settings.REDIS_DB,
+        r = redis.from_url(
+            settings.redis_url,
             socket_timeout=2.0,
             socket_connect_timeout=2.0,
         )
         r.ping()
-        _logger.info("✅ Redis is reachable at %s:%s", settings.REDIS_HOST, settings.REDIS_PORT)
+        _logger.info("✅ Redis is reachable at %s", settings.redis_url)
     except Exception as exc:
         _logger.warning(
-            "⚠️  Redis is NOT reachable at %s:%s — queue features will be degraded. Error: %s",
-            settings.REDIS_HOST, settings.REDIS_PORT, exc,
+            "⚠️  Redis is NOT reachable at %s — queue features will be degraded. Error: %s",
+            settings.redis_url, exc,
         )
 
 

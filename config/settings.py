@@ -25,9 +25,17 @@ class Settings(BaseSettings):
     MONGODB_URL: str = "mongodb://localhost:27017"
     MONGODB_DB: str = "intellireview_analysis"
     
+    REDIS_URL: Optional[str] = Field(None, env="REDIS_URL")
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+
+    @property
+    def redis_url(self) -> str:
+        """Canonical Redis URL.  REDIS_URL env-var wins, otherwise built from components."""
+        if self.REDIS_URL:
+            return self.REDIS_URL
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
     
     # AI Provider Settings
     HUGGINGFACE_API_KEY: Optional[str] = None

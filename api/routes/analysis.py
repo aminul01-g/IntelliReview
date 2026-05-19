@@ -221,6 +221,9 @@ async def analyze_code(
 
         # Inject it as a special issue at the top of the list
         if ai_overview_text:
+            # Defensive: extract string if LLM fallback returned a dict
+            if isinstance(ai_overview_text, dict):
+                ai_overview_text = ai_overview_text.get("overview") or ai_overview_text.get("suggestion") or str(ai_overview_text)
             overview_issue = {
                 "type": "ai_overview",
                 "severity": "info",

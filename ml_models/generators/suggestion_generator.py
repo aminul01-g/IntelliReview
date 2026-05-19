@@ -78,9 +78,12 @@ class SuggestionGenerator:
             logger.error(f"Error generating suggestion: {e}")
             return {"suggestion": "Could not generate suggestion."}
 
-    async def generate_general_review_async(self, code: str, issues: Any = None, language: str = "python") -> Dict[str, Any]:
+    async def generate_general_review_async(self, code: str, issues: Any = None, language: str = "python") -> str:
         """
         Generate a general AI overview/review of the code.
+
+        Returns a plain string (not a dict) so it can be assigned directly
+        to Issue.suggestion without causing Pydantic validation errors.
 
         Args:
             code: The source code to review.
@@ -88,7 +91,7 @@ class SuggestionGenerator:
             language: Programming language of the code.
         """
         if not self.chain:
-            return {"overview": "AI review not available - no LLM configured."}
+            return "AI review not available - no LLM configured."
 
         try:
             issues_context = ""
@@ -105,10 +108,10 @@ class SuggestionGenerator:
             ])
             review_chain = review_prompt | self.llm | StrOutputParser()
             overview = await review_chain.ainvoke({"language": language, "code": code[:1000], "issues_context": issues_context})
-            return {"overview": overview}
+            return overview
         except Exception as e:
             logger.error(f"Error generating review: {e}")
-            return {"overview": "Could not generate review."}
+            return "Could not generate review."
 
     async def generate_batch_suggestions(self, findings: List[Dict[str, Any]]) -> List[str]:
         """
@@ -227,3 +230,39 @@ class SuggestionGenerator:
         except Exception as e:
             logger.error(f"Error generating auto-fix: {e}")
             return {"diff": None, "reason": str(e)}
+
+    async def generate_architectural_hypothesis(
+        self, problem_statement: str, context_code: str = ""
+    ) -> str:
+        """
+        AI-powered hypothesis generation for complex architectural issues.
+        Accepts a problem description and suggests possible structural changes.
+
+        Returns a plain string with the hypothesis.
+        """
+        if not self.llm:
+            return (
+                "Architectural hypothesis generation not available - no LLM configured. "
+                "Please review the problem statement manually and consider applying "
+                "standard design patterns (Strategy, Facade, Repository) to decouple concerns."
+            )
+
+        try:
+            hypothesis_prompt = ChatPromptTemplate.from_messages([
+                ("system",
+                 "You are an elite software architect. Given a problem statement and optional "
+                 "code context, generate a concise architectural hypothesis describing the root "
+                 "cause and a concrete refactoring strategy to resolve it. Use Markdown."),
+                ("human",
+                 "Problem statement:\n{problem_statement}\n\n"
+                 "Code context:\n{context_code}\n\n"
+                 "Provide your architectural hypothesis and suggested fix.")
+            ])
+            hypothesis_chain = hypothesis_prompt | self.llm | StrOutputParser()
+            return await hypothesis_chain.ainvoke({
+                "problem_statement": problem_statement[:2000],
+                "context_code": context_code[:3000] if context_code else "No code context provided.",
+            })
+        except Exception as e:
+            logger.error(f"Error generating architectural hypothesis: {e}")
+            return f"Hypothesis generation failed: {e}. Please review the problem manually."

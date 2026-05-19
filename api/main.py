@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Starting IntelliReview API...")
     _validate_spa_assets()
+    _check_redis_on_startup()
     yield
     # Shutdown
     print("👋 Shutting down IntelliReview API...")
@@ -60,6 +61,29 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+# ── Pydantic Validation Error Handler ────────────────────────────────────────
+# Catches Pydantic validation errors and returns a structured 422 instead of 500.
+from pydantic import ValidationError as PydanticValidationError
+
+@app.exception_handler(PydanticValidationError)
+async def pydantic_validation_exception_handler(request: Request, exc: PydanticValidationError):
+    """Return 422 with validation details when Pydantic models reject input."""
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    _logger = logging.getLogger("api.validation")
+    _logger.warning(
+        "Pydantic validation error on %s %s [request_id=%s]: %s",
+        request.method, request.url.path, request_id, exc.error_count(),
+    )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Validation error",
+            "errors": exc.errors(),
+            "request_id": request_id,
+        },
+        headers={"X-Request-ID": request_id},
+    )
 
 # ── Global Exception Handler ────────────────────────────────────────────────
 # Catches ALL unhandled exceptions to prevent stack trace leakage.
@@ -261,6 +285,27 @@ def _validate_spa_assets():
             "SPA ASSET MISMATCH: index.html references assets that don't exist on disk: %s. "
             "This usually means the frontend was rebuilt but the server is serving a stale index.html.",
             missing,
+        )
+
+def _check_redis_on_startup():
+    """Non-blocking Redis connectivity check at startup.
+    Logs a warning if Redis is unreachable but does NOT prevent the API from starting."""
+    _logger = logging.getLogger("api.startup")
+    try:
+        import redis
+        r = redis.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            db=settings.REDIS_DB,
+            socket_timeout=2.0,
+            socket_connect_timeout=2.0,
+        )
+        r.ping()
+        _logger.info("✅ Redis is reachable at %s:%s", settings.REDIS_HOST, settings.REDIS_PORT)
+    except Exception as exc:
+        _logger.warning(
+            "⚠️  Redis is NOT reachable at %s:%s — queue features will be degraded. Error: %s",
+            settings.REDIS_HOST, settings.REDIS_PORT, exc,
         )
 
 

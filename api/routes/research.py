@@ -119,7 +119,7 @@ async def hypothesize_fix(
     context_code = request.get("context_code", "")
 
     if not problem_stmt:
-        raise HTTPException(status_code=400, detail="problem_statement is required")
+        raise HTTPException(status_code=422, detail="problem_statement is required")
 
     try:
         from ml_models.generators.suggestion_generator import SuggestionGenerator
@@ -140,5 +140,12 @@ async def hypothesize_fix(
                 "Introduce a facade for external API calls"
             ]
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Hypothesis generation failed: {str(e)}")
+        import logging
+        logging.getLogger(__name__).exception("Hypothesis generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Hypothesis generation failed: {str(e)}"
+        )

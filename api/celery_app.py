@@ -2,7 +2,14 @@ from celery import Celery
 import os
 from config.settings import settings
 
-redis_url = os.environ.get("CELERY_BROKER_URL", f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/0")
+# Chain: CELERY_BROKER_URL → REDIS_URL → construct from settings (covers both dev & prod compose)
+redis_url = os.environ.get(
+    "CELERY_BROKER_URL",
+    os.environ.get(
+        "REDIS_URL",
+        f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+    )
+)
 
 celery_app = Celery(
     "intellireview_tasks",
@@ -23,6 +30,16 @@ celery_app.conf.update(
     task_track_started=True,
     task_time_limit=300,       # Hard timeout: 5 minutes to prevent hung workers
     worker_prefetch_multiplier=1,  # Fair distribution for heavy analysis tasks
+
+    # ── Redis backend timeouts ───────────────────────────────────────
+    # Prevent blocking requests when Redis is slow or unreachable.
+    redis_socket_timeout=5.0,
+    redis_socket_connect_timeout=5.0,
+    result_backend_transport_options={
+        'retry_policy': {
+            'timeout': 10.0,
+        },
+    },
 
     # ── Retry / Resilience defaults ──────────────────────────────────
     # Individual tasks can override these via @celery_app.task(max_retries=N).

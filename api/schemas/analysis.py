@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Optional, Dict
 from datetime import datetime
 from enum import Enum
@@ -29,6 +29,14 @@ class Issue(BaseModel):
     quick_fix: Optional[str] = None
     cwe: Optional[str] = None
     reference_url: Optional[str] = None
+
+    @field_validator("suggestion", mode="before")
+    @classmethod
+    def coerce_suggestion(cls, v):
+        """Coerce dict suggestions (from LLM fallback) into plain strings."""
+        if isinstance(v, dict):
+            return v.get("overview") or v.get("suggestion") or str(v)
+        return v
 
 class Metrics(BaseModel):
     """Code metrics schema."""

@@ -182,6 +182,7 @@ def _fallback_response(reason: str) -> Dict[str, Any]:
     """Return a degraded-but-valid response when infrastructure is down."""
     return {
         "status": "degraded",
+        "redis_available": False,
         "reason": reason,
         "queues": {"bulk": 0, "express": 0, "default": 0},
         "total_pending": 0,

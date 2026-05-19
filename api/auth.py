@@ -35,7 +35,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-async def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db), verify_expiry: bool = True) -> User:
+async def get_current_user(request: Request, token: Optional[str] = None, db: Session = Depends(get_db), verify_expiry: bool = True) -> User:
     """
     Extract and validate the JWT token to return the current user.
     Checks both Authorization header and auth_token cookie.
@@ -46,10 +46,14 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # Prioritize header token, fallback to cookie
+    # Prioritize explicit token, then header, fallback to cookie
     final_token = token
     if not final_token and request:
-        final_token = request.cookies.get("auth_token")
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            final_token = auth_header.split(" ")[1]
+        elif not final_token:
+            final_token = request.cookies.get("auth_token")
 
     if not final_token:
         raise credentials_exception

@@ -7,13 +7,13 @@ try:
         engine = create_engine(
             settings.database_url,
             connect_args={"check_same_thread": False},
-            echo=settings.DEBUG
+            echo=False  # Avoid duplicate SQL logging; use sqlalchemy.engine logger if needed
         )
     else:
         engine = create_engine(
             settings.database_url,
             pool_pre_ping=True,
-            echo=settings.DEBUG
+            echo=False  # Avoid duplicate SQL logging; use sqlalchemy.engine logger if needed
         )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 except Exception as e:

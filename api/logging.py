@@ -12,6 +12,12 @@ def setup_logging():
         level=logging.INFO,
     )
 
+    # Silence noisy loggers that don't add value in normal operation
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine.Engine").setLevel(logging.WARNING)
+    # Suppress optional dependency warnings (e.g. sarif_om plugin)
+    logging.getLogger("sarif").setLevel(logging.ERROR)
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

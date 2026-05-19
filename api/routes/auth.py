@@ -140,15 +140,39 @@ async def refresh_token(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """Silently refresh the JWT access token to prevent session expiry."""
-    # Manually extract token from Authorization header if present
+    """Silently refresh the JWT access token to prevent session expiry.
+    
+    Accepts tokens via Authorization header or auth_token cookie.
+    Expired tokens are accepted and re-issued with a fresh expiry.
+    """
+    # Extract token from Authorization header first, then fall back to cookie
     auth_header = request.headers.get("Authorization")
     token = None
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
+    if not token:
+        token = request.cookies.get("auth_token")
 
-    # Use get_current_user but bypass expiration check to allow refreshing an expired token
-    current_user = await get_current_user(request=request, token=token, db=db, verify_expiry=False)
+    # No token anywhere — nothing to refresh
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No token provided — please log in",
+        )
+
+    # Validate the token (allow expired ones) and look up the user
+    try:
+        current_user = await get_current_user(
+            request=request, token=token, db=db, verify_expiry=False
+        )
+    except HTTPException:
+        # Token is corrupt, user was deleted, or DB was reset
+        # Clear stale cookie so the browser doesn't keep retrying
+        response.delete_cookie(**_get_cookie_kwargs(request=request))
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired — please log in again",
+        )
 
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(

@@ -56,10 +56,13 @@ api.interceptors.response.use(
           originalRequest.headers['Authorization'] = `Bearer ${refreshData.access_token}`
           return api(originalRequest)
         }
-      } catch (refreshError) {
+      } catch (refreshError: any) {
         // Refresh failed — session is truly dead, clear stale token
         localStorage.removeItem('auth_token')
-        window.dispatchEvent(new Event('auth:unauthorized'))
+        // Only broadcast unauthorized if it was an auth failure, not a network error
+        if (refreshError?.response?.status === 401 || !refreshError?.response) {
+          window.dispatchEvent(new Event('auth:unauthorized'))
+        }
         return Promise.reject(refreshError)
       }
     }

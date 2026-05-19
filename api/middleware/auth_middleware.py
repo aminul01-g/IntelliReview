@@ -17,6 +17,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         public_paths = [
             f"{settings.API_PREFIX}/auth/login",
             f"{settings.API_PREFIX}/auth/register",
+            f"{settings.API_PREFIX}/auth/refresh",
+            f"{settings.API_PREFIX}/auth/logout",
             "/health",
             f"{settings.API_PREFIX}/oauth"
         ]
@@ -33,7 +35,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         token = auth_header.split(" ")[1]
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-            username: str = payload.get("sub")
+            username: str | None = payload.get("sub")
             if username:
                 request.state.user = username
         except JWTError as e:

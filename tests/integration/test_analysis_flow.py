@@ -37,16 +37,14 @@ def override_get_db():
         db.close()
 
 
-# Override the dependency
-app.dependency_overrides[get_db] = override_get_db
-
-
 @pytest.fixture(scope="module", autouse=True)
 def setup_database():
     """Create all tables before tests and tear down after."""
+    app.dependency_overrides[get_db] = override_get_db
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+    app.dependency_overrides.pop(get_db, None)
     # Clean up test DB file
     import os
     try:

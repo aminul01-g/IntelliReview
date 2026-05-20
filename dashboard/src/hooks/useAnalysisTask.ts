@@ -79,7 +79,7 @@ export function useDiffTaskStatus(taskId: string | null) {
 
 export function useSubmitSnippetAnalysis() {
   return useMutation({
-    mutationFn: async (payload: { code: string; language: string; filename: string }) => {
+    mutationFn: async (payload: { code: string; language: string; file_path: string }) => {
       const response = await api.post('/analysis/analyze', payload);
       return response.data;
     }

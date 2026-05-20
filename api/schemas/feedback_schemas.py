@@ -305,8 +305,12 @@ class ReviewerFeedbackRequest(BaseModel):
     comment: Optional[str] = Field(
         None, description="Free-text comment from the reviewer"
     )
-    repository: str = Field(..., description="Repository full name")
-    pr_number: int = Field(..., ge=1)
+    repository: Optional[str] = Field(
+        default="unknown", description="Repository full name (optional for snippet reviews)"
+    )
+    pr_number: Optional[int] = Field(
+        default=None, ge=1, description="PR number (optional for snippet reviews)"
+    )
 
 
 class ReviewerFeedbackResponse(BaseModel):

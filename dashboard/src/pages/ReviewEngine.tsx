@@ -29,6 +29,24 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any; taskId?: stri
     )
   }
 
+  const extractErrorMessage = (error: any, fallback: string): string => {
+    const data = error?.response?.data
+    if (data?.detail && typeof data.detail === 'string') return data.detail
+    if (data?.errors && Array.isArray(data.errors)) {
+      const firstErr = data.errors[0]
+      const loc = firstErr?.loc?.join(' → ') || ''
+      const msg = firstErr?.msg || ''
+      return loc ? `${loc}: ${msg}` : msg || fallback
+    }
+    if (data?.detail && Array.isArray(data.detail)) {
+      const firstErr = data.detail[0]
+      const loc = firstErr?.loc?.join(' → ') || ''
+      const msg = firstErr?.msg || ''
+      return loc ? `${loc}: ${msg}` : msg || fallback
+    }
+    return error?.message || fallback
+  }
+
   const handleRequestBetterFix = async () => {
     setFeedbackMsg(null)
     try {
@@ -36,12 +54,10 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any; taskId?: stri
         finding_id: suggestion.rule_id || suggestion.id || suggestion.concept || 'UNKNOWN',
         action: 'request_better_fix',
         comment: '',
-        repository: 'unknown',
-        pr_number: 0
       })
       setFeedbackMsg('Requested a better fix. Thank you!')
-    } catch (e) {
-      setFeedbackMsg('Failed to request better fix.')
+    } catch (e: any) {
+      setFeedbackMsg(extractErrorMessage(e, 'Failed to request better fix.'))
     }
   }
 
@@ -52,12 +68,10 @@ const SuggestionCard = ({ suggestion, taskId }: { suggestion: any; taskId?: stri
         finding_id: suggestion.rule_id || suggestion.id || suggestion.concept || 'UNKNOWN',
         action: 'ignore_pattern',
         comment: '',
-        repository: 'unknown',
-        pr_number: 0
       })
       setFeedbackMsg('Pattern will be ignored in future reviews.')
-    } catch (e) {
-      setFeedbackMsg('Failed to ignore pattern.')
+    } catch (e: any) {
+      setFeedbackMsg(extractErrorMessage(e, 'Failed to ignore pattern.'))
     }
   }
 
@@ -192,7 +206,7 @@ const ReviewEngine = () => {
       // ── Snippet mode: synchronous full static analysis ──
       const language = guessLanguage(diffInput)
       submitSnippetMutation.mutate(
-        { code: diffInput, language, filename: `review.${language === 'python' ? 'py' : language === 'javascript' ? 'js' : language === 'java' ? 'java' : 'py'}` },
+        { code: diffInput, language, file_path: `review.${language === 'python' ? 'py' : language === 'javascript' ? 'js' : language === 'java' ? 'java' : 'py'}` },
         {
           onSuccess: (data: any) => {
             setSnippetResult(data)

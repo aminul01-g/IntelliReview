@@ -1,77 +1,161 @@
+"""
+Integration test: Full Analysis Flow.
+
+Spins up a test SQLite database, registers a user, uploads/analyzes code,
+and verifies an Analysis record is created in the database.
+
+Marked with @pytest.mark.integration so CI can run it separately.
+"""
+
 import pytest
-import asyncio
-from httpx import AsyncClient
-from api.main import app
-from api.database import Base, engine
-from api.celery_app import celery_app
+from unittest.mock import patch, MagicMock
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-# Use a separate test database for integration tests
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+from api.database import Base, get_db
+from api.main import app
 
-class AnalysisFlowTest:
-    """
-    Integration tests for the full analysis pipeline.
-    Verifies: API Request -> Celery Task -> LLM Result -> DB Storage.
-    """
 
-    async def setup_method(self):
-        self.client = AsyncClient(app=app, base_url="http://test")
-        # In a real scenario, we would use a separate test DB and a mock Celery broker
-        # For this integration test, we simulate the flow
+# ── Test Database Setup ──────────────────────────────────────────────────────
 
-    async def test_full_analysis_pipeline(self):
-        """
-        Test that submitting a snippet for analysis returns a valid result
-        and creates the necessary database entries.
-        """
-        test_payload = {
-            "code": "def insecure_func():\n    pass",
+TEST_DATABASE_URL = "sqlite:///./test_integration.db"
+
+engine = create_engine(
+    TEST_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def override_get_db():
+    """Yield a test DB session."""
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# Override the dependency
+app.dependency_overrides[get_db] = override_get_db
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_database():
+    """Create all tables before tests and tear down after."""
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+    # Clean up test DB file
+    import os
+    try:
+        os.remove("./test_integration.db")
+    except OSError:
+        pass
+
+
+@pytest.fixture(scope="module")
+def client():
+    """Create a synchronous test client."""
+    return TestClient(app)
+
+
+@pytest.fixture(scope="module")
+def auth_headers(client):
+    """Register a test user and return auth headers with a valid JWT."""
+    # Register
+    register_resp = client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "integration_test_user",
+            "email": "integ@test.com",
+            "password": "TestPassword123!",
+        },
+    )
+    assert register_resp.status_code in (200, 201, 409), (
+        f"Registration failed: {register_resp.text}"
+    )
+
+    # Login
+    login_resp = client.post(
+        "/api/v1/auth/login",
+        data={
+            "username": "integration_test_user",
+            "password": "TestPassword123!",
+        },
+    )
+    assert login_resp.status_code == 200, f"Login failed: {login_resp.text}"
+
+    token = login_resp.json().get("access_token")
+    assert token, "No access_token returned from login"
+
+    return {"Authorization": f"Bearer {token}"}
+
+
+# ── Integration Tests ────────────────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestAnalysisFlow:
+    """End-to-end analysis flow: submit code → verify DB record."""
+
+    def test_analyze_code_creates_record(self, client, auth_headers):
+        """Submit a snippet for analysis and verify an Analysis row is created."""
+        payload = {
+            "code": "def foo():\n    eval(input())\n    return 42\n",
             "language": "python",
-            "filename": "test.py"
+            "file_path": "test_snippet.py",
         }
 
-        # 1. Submit for analysis
-        # Note: We assume the user is already authenticated via a mock token
-        response = await self.client.post(
+        resp = client.post(
             "/api/v1/analysis/analyze",
-            json=test_payload,
-            headers={"Authorization": "Bearer mock-token"}
+            json=payload,
+            headers=auth_headers,
         )
 
-        assert response.status_code == 200
-        data = response.json()
+        assert resp.status_code == 200, f"Analyze failed: {resp.text}"
+        data = resp.json()
+
+        # Verify response structure
+        assert "analysis_id" in data
         assert "issues" in data
         assert isinstance(data["issues"], list)
+        assert data["status"] in ("completed", "SUCCESS")
+        assert data["language"] == "python"
 
-    async def test_webhook_trigger(self):
-        """
-        Test that a GitHub webhook payload correctly triggers a Celery task.
-        """
-        webhook_payload = {
-            "pull_request": {
-                "number": 123,
-                "head": {"sha": "abc123diff"},
-                "base": {"ref": "main"}
-            },
-            "repository": {
-                "full_name": "owner/repo"
-            }
-        }
+        # Verify the record exists in the database
+        db = TestingSessionLocal()
+        try:
+            from api.models.analysis import Analysis
 
-        response = await self.client.post(
-            "/api/v1/webhooks/github",
-            json=webhook_payload,
-            headers={"X-Hub-Signature-256": "mock-sig"}
+            record = db.query(Analysis).filter(Analysis.id == data["analysis_id"]).first()
+            assert record is not None, "Analysis record was not persisted to the database"
+            assert record.language == "python"
+            assert record.status in ("completed", "SUCCESS")
+            assert record.issues is not None
+        finally:
+            db.close()
+
+    def test_analysis_history_returns_record(self, client, auth_headers):
+        """After analysis, the history endpoint should include the result."""
+        resp = client.get(
+            "/api/v1/analysis/history",
+            headers=auth_headers,
         )
+        assert resp.status_code == 200
+        history = resp.json()
+        assert isinstance(history, list)
+        assert len(history) >= 1
 
-        assert response.status_code == 202
-        assert response.json()["status"] == "queued"
+    def test_health_endpoint(self, client):
+        """Health endpoint should be publicly accessible."""
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "healthy"
 
-@pytest.mark.asyncio
-async def test_api_health():
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        response = await client.get("/health")
-        assert response.status_code == 200
-        assert response.json() == {"status": "healthy"}
+    def test_metrics_endpoint(self, client):
+        """Prometheus metrics should be scrape-able."""
+        resp = client.get("/metrics")
+        assert resp.status_code == 200
+        assert "http_requests_total" in resp.text or "HELP" in resp.text

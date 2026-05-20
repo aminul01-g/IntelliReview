@@ -56,14 +56,27 @@ class SuggestionGenerator:
     async def generate_suggestion(self, finding: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generates a code suggestion for a specific analysis finding.
+
+        Returns a dict with a "suggestion" key whose value is always a **string**.
         """
-        return await self.generate_suggestion_async(code="", finding=finding)
+        result = await self.generate_suggestion_async(code="", finding=finding)
+        # Defensive: ensure the 'suggestion' value is a plain string so
+        # downstream Pydantic models (Issue.suggestion) never receive a dict.
+        if isinstance(result, dict):
+            suggestion = result.get("suggestion", "")
+            if isinstance(suggestion, dict):
+                suggestion = suggestion.get("overview") or suggestion.get("suggestion") or str(suggestion)
+            result["suggestion"] = str(suggestion) if suggestion else ""
+        return result
 
     async def generate_suggestion_async(self, code: str, finding: Dict[str, Any], language: str = "python") -> Dict[str, Any]:
         """
         Async version for generating suggestions with code context.
+
+        Always returns ``{"suggestion": "<plain string>"}``.
         """
         if not self.chain:
+            # Fallback: return a dict with a **string** value (not a nested dict)
             return {"suggestion": "Suggestion generation not available - no LLM configured."}
 
         try:
@@ -73,7 +86,10 @@ class SuggestionGenerator:
                 "file_path": "code snippet",
                 "code_context": code[:500] if code else "No context"
             })
-            return {"suggestion": suggestion}
+            # Ensure we always return a string
+            if isinstance(suggestion, dict):
+                suggestion = suggestion.get("overview") or suggestion.get("suggestion") or str(suggestion)
+            return {"suggestion": str(suggestion)}
         except Exception as e:
             logger.error(f"Error generating suggestion: {e}")
             return {"suggestion": "Could not generate suggestion."}

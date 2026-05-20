@@ -15,6 +15,7 @@ from api.middleware.auth_middleware import AuthMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
 from api.middleware.logging_middleware import LoggingMiddleware
 from api.middleware.resilience import LLMResilienceMiddleware
+from api.middleware.audit_middleware import AuditMiddleware
 from api.logging import setup_logging
 from config.settings import settings
 
@@ -61,6 +62,10 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+# ── Prometheus auto-instrumentation (per-route latency + counts) ─────────────
+from api.metrics import setup_instrumentator
+setup_instrumentator(app)
 
 # ── Pydantic Validation Error Handler ────────────────────────────────────────
 # Catches Pydantic validation errors and returns a structured 422 instead of 500.
@@ -118,7 +123,8 @@ app.add_middleware(
 # LLM Resilience middleware — translates upstream 429/503/504 into structured errors
 app.add_middleware(LLMResilienceMiddleware)
 
-# Custom middleware
+# Custom middleware (order matters: last-added runs first for requests)
+app.add_middleware(AuditMiddleware)      # Gap #6: logs all mutating requests
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RateLimitMiddleware, limiter=limiter)

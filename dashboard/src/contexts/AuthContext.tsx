@@ -28,6 +28,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchUser = async () => {
+    // Guard: skip the network call entirely when there is no stored token.
+    // This prevents a guaranteed 401 on /auth/me (and the subsequent
+    // /auth/refresh retry) when the user has never logged in.
+    const storedToken = localStorage.getItem('auth_token');
+    if (!storedToken) {
+      setUser(null);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { data } = await api.get('/auth/me');
       setUser(data);
